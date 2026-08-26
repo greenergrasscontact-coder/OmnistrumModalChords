@@ -1,0 +1,16 @@
+{
+  "name": "Modal Chords",
+  "short_name": "Modal Chords",
+  "description": "Seven modes, twelve roots, the diatonic chord family — explore, hear, and build progressions.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#161210",
+  "theme_color": "#161210",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "OMNISTRUM",
+  "short_name": "OMNISTRUM",
+  "description": "Omnichord-style synthesizer: chord grid, strum plate, eight voices, rhythm and bass sequencer.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14100c",
+  "theme_color": "#14100c",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

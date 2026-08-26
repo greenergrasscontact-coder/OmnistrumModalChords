@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instruments</title>
+<meta name="description" content="Browser instruments and music theory tools.">
+<meta name="theme-color" content="#14100c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --plate:#15110d;
+    --ground:#221c16;
+    --chassis:#ddcaa6;
+    --chassis-lo:#c3ad84;
+    --bezel:#2a221a;
+    --ink:#2a221a;
+    --gold:#caa15a;
+    --gold-hi:#ffdd8a;
+    --led:#ff5a3c;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    min-height:100vh;
+    background:radial-gradient(120% 80% at 50% -10%, #4a4036 0%, #221c16 55%, #14100c 100%);
+    color:var(--chassis);
+    font-family:"Bricolage Grotesque",system-ui,sans-serif;
+    padding:clamp(28px,7vw,72px) clamp(16px,5vw,32px) 64px;
+    display:flex;
+    justify-content:center;
+  }
+  .rack{width:100%;max-width:760px;}
+
+  .eyebrow{
+    font-family:"Space Mono",ui-monospace,monospace;
+    font-size:11px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color:var(--gold);
+    opacity:0.75;
+    margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(30px,8vw,46px);
+    font-weight:700;
+    line-height:1.02;
+    letter-spacing:-0.02em;
+    margin:0 0 14px;
+    color:var(--chassis);
+  }
+  .lede{
+    margin:0 0 clamp(28px,6vw,44px);
+    max-width:46ch;
+    font-size:15px;
+    line-height:1.55;
+    color:#a9987c;
+  }
+
+  .units{display:grid;gap:14px;}
+
+  .unit{
+    display:grid;
+    grid-template-columns:64px 1fr;
+    gap:18px;
+    align-items:center;
+    padding:18px;
+    border-radius:18px;
+    text-decoration:none;
+    color:inherit;
+    background:linear-gradient(180deg,#302720 0%,#241d17 100%);
+    border:1px solid #3d3126;
+    box-shadow:inset 0 1px 0 rgba(255,225,170,0.07), 0 8px 22px rgba(0,0,0,0.35);
+    position:relative;
+    overflow:hidden;
+    transition:transform 140ms ease, border-color 140ms ease;
+  }
+  .unit::after{
+    /* strum plate: five strings, lit on hover */
+    content:"";
+    position:absolute;
+    inset:0 0 0 auto;
+    width:88px;
+    background:repeating-linear-gradient(
+      -14deg,
+      transparent 0 9px,
+      rgba(202,161,90,0.16) 9px 11px
+    );
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 70%);
+    mask-image:linear-gradient(90deg,transparent,#000 70%);
+    transition:opacity 200ms ease;
+    opacity:0.7;
+    pointer-events:none;
+  }
+  .unit:hover,.unit:focus-visible{transform:translateY(-2px);border-color:#5b4832;}
+  .unit:hover::after,.unit:focus-visible::after{opacity:1;}
+  .unit:focus-visible{outline:2px solid var(--gold-hi);outline-offset:3px;}
+  .unit img{width:64px;height:64px;border-radius:14px;display:block;}
+  .unit h2{
+    margin:0 0 4px;
+    font-size:17px;
+    letter-spacing:0.01em;
+    font-weight:700;
+    color:var(--chassis);
+  }
+  .unit p{margin:0;font-size:13.5px;line-height:1.5;color:#9d8c72;max-width:38ch;}
+  .tag{
+    display:inline-block;
+    margin-top:9px;
+    font-family:"Space Mono",ui-monospace,monospace;
+    font-size:10px;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color:var(--gold);
+    border:1px solid rgba(202,161,90,0.35);
+    border-radius:999px;
+    padding:3px 9px;
+  }
+
+  .note{
+    margin-top:clamp(30px,6vw,44px);
+    padding-top:20px;
+    border-top:1px solid #3a2f24;
+    font-size:13px;
+    line-height:1.6;
+    color:#8b7c66;
+    max-width:52ch;
+  }
+  .note strong{color:#b8a687;font-weight:400;}
+  .note code{
+    font-family:"Space Mono",ui-monospace,monospace;
+    font-size:12px;
+    color:var(--gold);
+  }
+
+  @media (max-width:420px){
+    .unit{grid-template-columns:52px 1fr;gap:14px;padding:16px;}
+    .unit img{width:52px;height:52px;border-radius:12px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .unit,.unit::after{transition:none;}
+    .unit:hover,.unit:focus-visible{transform:none;}
+  }
+</style>
+</head>
+<body>
+  <main class="rack">
+    <p class="eyebrow">Runs in the browser</p>
+    <h1>Instruments</h1>
+    <p class="lede">Two tools that make sound. Open one, then add it to your home screen — it gets its own icon and runs without the browser around it.</p>
+
+    <div class="units">
+      <a class="unit" href="./omnistrum/">
+        <img src="./omnistrum/icons/icon-192.png" alt="" width="64" height="64">
+        <div>
+          <h2>OMNISTRUM</h2>
+          <p>Omnichord-style synth: chord grid, strum plate, eight voices, rhythm and bass sequencer.</p>
+          <span class="tag">Play</span>
+        </div>
+      </a>
+
+      <a class="unit" href="./modalchords/">
+        <img src="./modalchords/icons/icon-192.png" alt="" width="64" height="64">
+        <div>
+          <h2>Modal Chords</h2>
+          <p>Seven modes, twelve roots, the diatonic chord family — voicings, progressions, ear training, MIDI export.</p>
+          <span class="tag">Study</span>
+        </div>
+      </a>
+    </div>
+
+    <p class="note">
+      <strong>To install:</strong> on iPhone open in Safari and tap Share → Add to Home Screen. On Android, Chrome menu → Install app. On desktop, the install icon in the address bar.
+      Both work offline after the first visit.
+    </p>
+  </main>
+</body>
+</html>
