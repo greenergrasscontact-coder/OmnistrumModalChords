@@ -1,7 +1,7 @@
 /* Modal Chords service worker
    Bump VERSION whenever you change index.html — that's what forces phones
    to pick up the new build instead of serving the cached one forever. */
-const VERSION = 'modalchords-v1';
+const VERSION = 'modalchords-v2';
 const CORE_CACHE = VERSION + '-core';
 const CDN_CACHE = VERSION + '-cdn';
 const KEEP = [CORE_CACHE, CDN_CACHE];

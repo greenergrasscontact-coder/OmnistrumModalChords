@@ -4,17 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Modal Chords</title>
-<!-- ===== PWA: installable app metadata (added 2026-08-25) ===== -->
-<meta name="theme-color" content="#161210">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Modal Chords">
-<link rel="manifest" href="./manifest.webmanifest">
-<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
-<link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
-<!-- ===== end PWA metadata ===== -->
-
 <meta name="description" content="Seven modes, twelve roots, the diatonic chord family — explore, hear, and build progressions." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='80'>&#119070;</text></svg>" />
 <!-- React 18 UMD only. The app's JSX is PRECOMPILED to plain JS below, so the
@@ -1238,18 +1227,22 @@ function PianoDiagram({ rootIdx, quality, inversion, accent, customMidi }) {
 const FINDER_WHITE_SEMITONES = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
 const FINDER_BLACK_AFTER_WHITE = [0, 1, 3, 4, 5, 7, 8, 10, 11, 12];
 const FINDER_BLACK_SEMITONES = [1, 3, 6, 8, 10, 13, 15, 18, 20, 22];
-function InteractivePiano({ activeSemitones, onChange, onPlayNote, accent }) {
+// The finder piano shows a 2-octave window that can slide up and down. Notes are
+// stored as ABSOLUTE MIDI numbers, so selections outside the current window are
+// preserved (and reported) rather than lost.
+function InteractivePiano({ activeMidi, onChange, onPlayNote, accent, baseMidi = 60 }) {
     const W = 360, numWhite = 15, ww = W / numWhite, wh = 144;
     const bw = ww * 0.62, bh = wh * 0.62, H = wh + 6;
     const toggle = (semitone) => {
-        const next = new Set(activeSemitones);
-        if (next.has(semitone)) {
-            next.delete(semitone);
+        const midi = baseMidi + semitone;
+        const next = new Set(activeMidi);
+        if (next.has(midi)) {
+            next.delete(midi);
         }
         else {
-            next.add(semitone);
+            next.add(midi);
             if (onPlayNote)
-                onPlayNote(60 + semitone);
+                onPlayNote(midi);
         }
         onChange(next);
     };
@@ -1264,7 +1257,7 @@ function InteractivePiano({ activeSemitones, onChange, onPlayNote, accent }) {
     };
     return (React.createElement("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, style: { maxWidth: "100%", height: "auto" }, className: "finder-piano" },
         FINDER_WHITE_SEMITONES.map((semitone, i) => {
-            const isActive = activeSemitones.has(semitone);
+            const isActive = activeMidi.has(baseMidi + semitone);
             return (React.createElement("rect", { key: `w${i}`, x: i * ww, y: 0, width: ww, height: wh, rx: 1.5, className: `finder-key-white ${isActive ? "active" : ""}`, onClick: () => toggle(semitone) }));
         }),
         Array.from({ length: numWhite - 1 }).map((_, i) => (React.createElement("line", { key: `sep${i}`, x1: (i + 1) * ww, y1: 0, x2: (i + 1) * ww, y2: wh, className: "piano-sep", pointerEvents: "none" }))),
@@ -1272,13 +1265,20 @@ function InteractivePiano({ activeSemitones, onChange, onPlayNote, accent }) {
         React.createElement("rect", { x: 0, y: 0, width: W, height: wh, rx: 2, fill: "none", className: "piano-frame", pointerEvents: "none" }),
         FINDER_BLACK_AFTER_WHITE.map((wi, i) => {
             const semitone = FINDER_BLACK_SEMITONES[i];
-            const isActive = activeSemitones.has(semitone);
+            const isActive = activeMidi.has(baseMidi + semitone);
             return (React.createElement("rect", { key: `b${i}`, x: (wi + 1) * ww - bw / 2, y: 0, width: bw, height: bh, rx: 1.5, className: `finder-key-black ${isActive ? "active" : ""}`, onClick: () => toggle(semitone) }));
         }),
-        [...activeSemitones].map((semitone) => {
+        [...activeMidi].map((midi) => {
+            const semitone = midi - baseMidi;
+            if (semitone < 0 || semitone > 24)
+                return null; // outside this window
             const { cx, cy, isBlack } = semitoneToCxCy(semitone);
-            return React.createElement("circle", { key: `mk${semitone}`, cx: cx, cy: cy, r: isBlack ? 5 : 6, fill: accent, pointerEvents: "none", className: "finder-marker" });
+            return React.createElement("circle", { key: `mk${midi}`, cx: cx, cy: cy, r: isBlack ? 5 : 6, fill: accent, pointerEvents: "none", className: "finder-marker" });
         })));
+}
+// MIDI 60 = C4 (scientific pitch notation)
+function midiOctaveLabel(midi) {
+    return `${NOTES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Interactive fretboard (chord finder)
@@ -1352,14 +1352,42 @@ function getAccent(quality, palette) {
     return palette.maj;
 }
 const INVERSION_NAME = ["Root position", "1st inversion", "2nd inversion", "3rd inversion", "4th inversion"];
-function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord }) {
+function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord, loadRequest, onUpdateSlot, onCancelEdit }) {
     const [open, setOpen] = useState(false);
-    const [pianoActive, setPianoActive] = useState(new Set());
+    const [pianoActive, setPianoActive] = useState(new Set()); // absolute MIDI numbers
     const [guitarFrets, setGuitarFrets] = useState([null, null, null, null, null, null]);
+    const [pianoBase, setPianoBase] = useState(60); // window start, C4
+    const [editSlotId, setEditSlotId] = useState(null);
+    const [editLabel, setEditLabel] = useState(null);
+    // A chord sent here from a card or a progression slot: load its notes, open up,
+    // and (when it came from a slot) remember which slot we're editing.
+    useEffect(() => {
+        if (!loadRequest)
+            return;
+        setOpen(true);
+        setEditSlotId(loadRequest.slotId || null);
+        setEditLabel(loadRequest.label || null);
+        if (loadRequest.instrument === "guitar" && loadRequest.frets) {
+            setGuitarFrets([...loadRequest.frets]);
+        }
+        else if (loadRequest.midi && loadRequest.midi.length) {
+            const midi = [...loadRequest.midi];
+            setPianoActive(new Set(midi));
+            // Slide the window to fit the whole chord when it spans <= 2 octaves,
+            // otherwise anchor on the lowest note.
+            const lo = Math.min(...midi), hi = Math.max(...midi);
+            let base = 60;
+            while (lo < base && base > 24)
+                base -= 12;
+            while (hi > base + 24 && lo >= base + 12 && base < 96)
+                base += 12;
+            setPianoBase(base);
+        }
+    }, [loadRequest]);
     const identified = useMemo(() => {
         let midiNotes;
         if (instrument === "piano") {
-            midiNotes = [...pianoActive].map((s) => 60 + s);
+            midiNotes = [...pianoActive];
         }
         else {
             midiNotes = guitarFrets
@@ -1371,36 +1399,66 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
     const primary = identified[0];
     const accent = primary ? getAccent(primary.quality, palette) : palette.maj;
     const noteCount = instrument === "piano" ? pianoActive.size : guitarFrets.filter((f) => f !== null).length;
+    // Notes held outside the visible 2-octave window (they still count toward the chord)
+    const offscreen = instrument === "piano"
+        ? [...pianoActive].filter((m) => m < pianoBase || m > pianoBase + 24).length
+        : 0;
     const clearNotes = () => {
         setPianoActive(new Set());
         setGuitarFrets([null, null, null, null, null, null]);
     };
-    useEffect(() => { clearNotes(); }, [instrument]);
+    const exitEdit = () => {
+        setEditSlotId(null);
+        setEditLabel(null);
+        if (onCancelEdit)
+            onCancelEdit();
+    };
+    useEffect(() => { clearNotes(); exitEdit(); }, [instrument]);
     const playFound = () => {
         if (!primary)
             return;
+        if (instrument === "piano" && pianoActive.size > 0) {
+            // Sound the exact voicing entered, not a generic root-position chord
+            const sorted = [...pianoActive].sort((a, b) => a - b);
+            onPlayChord(sorted.map((m) => m - sorted[0]), sorted[0]);
+            return;
+        }
         const intervals = applyInversion(CHORD_INTERVALS[primary.quality], primary.inversion);
         onPlayChord(intervals, 60 + primary.rootIdx);
     };
-    const addPrimary = () => {
-        if (!primary)
-            return;
+    const buildChordAndCustom = () => {
         const chord = {
             rootIdx: primary.rootIdx, quality: primary.quality, degree: "",
             name: primary.name, shape: getChordShape(primary.rootIdx, primary.quality),
+            voicings: getChordVoicings(primary.rootIdx, primary.quality, 0),
         };
         // Capture the user's actual voicing so the saved chord plays/displays exactly
         // what they entered (rather than reverting to a generic root-position shape).
         const custom = instrument === "guitar"
             ? { frets: [...guitarFrets] }
-            : { midi: [...pianoActive].map((s) => 60 + s).sort((a, b) => a - b) };
+            : { midi: [...pianoActive].sort((a, b) => a - b) };
+        return { chord, custom };
+    };
+    const addPrimary = () => {
+        if (!primary)
+            return;
+        const { chord, custom } = buildChordAndCustom();
         onAddToProgression(chord, { inversion: primary.inversion, octave: 0 }, custom);
+        if (editSlotId)
+            exitEdit();
+    };
+    const updateSlot = () => {
+        if (!primary || !editSlotId || !onUpdateSlot)
+            return;
+        const { chord, custom } = buildChordAndCustom();
+        onUpdateSlot(editSlotId, chord, { inversion: primary.inversion, octave: 0 }, custom);
+        exitEdit();
     };
     // Compute the list of selected note names (in order from bass up) for display
     const selectedNoteNames = useMemo(() => {
         let midiNotes;
         if (instrument === "piano") {
-            midiNotes = [...pianoActive].map((s) => 60 + s);
+            midiNotes = [...pianoActive];
         }
         else {
             midiNotes = guitarFrets
@@ -1453,7 +1511,26 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                 open && primary ? (React.createElement("span", { className: "finder-found-pill", style: { color: accent } }, displayName)) : (React.createElement("span", { className: "finder-subtitle" }, "identify a chord from notes"))),
             React.createElement("span", { className: "finder-toggle" }, open ? "▾" : "▸")),
         open && (React.createElement("div", { className: "finder-body" },
-            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeSemitones: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent }))),
+            editSlotId && (React.createElement("div", { className: "finder-edit-banner" },
+                React.createElement("span", null,
+                    "Editing ",
+                    React.createElement("strong", null, editLabel || "chord"),
+                    " in the progression"),
+                React.createElement("button", { className: "finder-edit-cancel", onClick: () => { exitEdit(); clearNotes(); } }, "cancel"))),
+            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeMidi: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent, baseMidi: pianoBase })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent }))),
+            instrument === "piano" && (React.createElement("div", { className: "finder-octave-bar" },
+                React.createElement("button", { className: "finder-oct-btn", onClick: () => setPianoBase((b) => Math.max(24, b - 12)), disabled: pianoBase <= 24, title: "Move down an octave" }, "\u25C2 oct"),
+                React.createElement("span", { className: "finder-oct-range" },
+                    midiOctaveLabel(pianoBase),
+                    " \u2013 ",
+                    midiOctaveLabel(pianoBase + 24)),
+                React.createElement("button", { className: "finder-oct-btn", onClick: () => setPianoBase((b) => Math.min(96, b + 12)), disabled: pianoBase >= 96, title: "Move up an octave" }, "oct \u25B8"),
+                offscreen > 0 && (React.createElement("span", { className: "finder-offscreen", title: "Selected notes outside this window are still part of the chord" },
+                    "+",
+                    offscreen,
+                    " note",
+                    offscreen === 1 ? "" : "s",
+                    " off-screen")))),
             React.createElement("div", { className: "finder-results" },
                 statusText && React.createElement("div", { className: "finder-status" }, statusText),
                 primary && (React.createElement("div", { className: "finder-chord-display" },
@@ -1470,20 +1547,23 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
             React.createElement("div", { className: "finder-actions" },
                 React.createElement("button", { className: "finder-btn-secondary", onClick: clearNotes, disabled: noteCount === 0 }, "Clear"),
                 React.createElement("button", { className: "finder-btn-secondary", onClick: playFound, disabled: !primary }, "\u25B8 Play"),
-                React.createElement("button", { className: "finder-btn-primary", onClick: addPrimary, disabled: !primary }, "+ Add to Progression"))))));
+                editSlotId ? (React.createElement(React.Fragment, null,
+                    React.createElement("button", { className: "finder-btn-secondary", onClick: addPrimary, disabled: !primary }, "+ Add as new"),
+                    React.createElement("button", { className: "finder-btn-primary", onClick: updateSlot, disabled: !primary }, "\u2713 Update chord"))) : (React.createElement("button", { className: "finder-btn-primary", onClick: addPrimary, disabled: !primary }, "+ Add to Progression")))))));
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Scale finder — identify a mode from selected notes
 // ─────────────────────────────────────────────────────────────────────────────
 function ScaleFinder({ instrument, palette, onSelectScale, onPlayNote }) {
     const [open, setOpen] = useState(false);
-    const [pianoActive, setPianoActive] = useState(new Set());
+    const [pianoActive, setPianoActive] = useState(new Set()); // absolute MIDI numbers
     const [guitarFrets, setGuitarFrets] = useState([null, null, null, null, null, null]);
+    const [pianoBase, setPianoBase] = useState(60);
     // Selected pitch classes and the lowest selected note (tonic hint)
     const { pcs, bassPc, count } = useMemo(() => {
         let midi;
         if (instrument === "piano")
-            midi = [...pianoActive].map((s) => 60 + s);
+            midi = [...pianoActive];
         else
             midi = guitarFrets.map((f, i) => (f === null ? null : OPEN_STRING_MIDI[i] + f)).filter((m) => m !== null);
         midi.sort((a, b) => a - b);
@@ -1530,7 +1610,14 @@ function ScaleFinder({ instrument, palette, onSelectScale, onPlayNote }) {
                     primary.modeName)) : (React.createElement("span", { className: "finder-subtitle" }, "identify a scale from notes"))),
             React.createElement("span", { className: "finder-toggle" }, open ? "▾" : "▸")),
         open && (React.createElement("div", { className: "finder-body" },
-            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeSemitones: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent }))),
+            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeMidi: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent, baseMidi: pianoBase })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent }))),
+            instrument === "piano" && (React.createElement("div", { className: "finder-octave-bar" },
+                React.createElement("button", { className: "finder-oct-btn", onClick: () => setPianoBase((b) => Math.max(24, b - 12)), disabled: pianoBase <= 24, title: "Move down an octave" }, "\u25C2 oct"),
+                React.createElement("span", { className: "finder-oct-range" },
+                    midiOctaveLabel(pianoBase),
+                    " \u2013 ",
+                    midiOctaveLabel(pianoBase + 24)),
+                React.createElement("button", { className: "finder-oct-btn", onClick: () => setPianoBase((b) => Math.min(96, b + 12)), disabled: pianoBase >= 96, title: "Move up an octave" }, "oct \u25B8"))),
             React.createElement("div", { className: "finder-results" },
                 statusText && React.createElement("div", { className: "finder-status" }, statusText),
                 primary && (React.createElement("div", { className: "finder-chord-display" },
@@ -1558,7 +1645,7 @@ function ScaleFinder({ instrument, palette, onSelectScale, onPlayNote }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Progression bar
 // ─────────────────────────────────────────────────────────────────────────────
-function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, presets, onApplyPreset, onUpdateSlot, onExport }) {
+function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, presets, onApplyPreset, onUpdateSlot, onExport, onEditSlot }) {
     const isEmpty = progression.length === 0;
     const [showFingerings, setShowFingerings] = useState(true);
     const [showPresets, setShowPresets] = useState(false);
@@ -1634,6 +1721,7 @@ function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove
                     React.createElement("div", { className: "prog-slot-arp", title: "Arpeggio pattern" }, ARP_PATTERNS.map((p) => (React.createElement("button", { key: p, className: `prog-arp-btn ${(slot.settings.arp || "off") === p ? "active" : ""}`, onClick: () => onUpdateSlot(slot.id, { arp: p }), title: ARP_NAME[p] }, ARP_GLYPH[p])))),
                     React.createElement("div", { className: "prog-slot-arrows" },
                         React.createElement("button", { onClick: () => onMove(slot.id, -1), disabled: i === 0 }, "\u25C2"),
+                        React.createElement("button", { onClick: () => onEditSlot(slot), title: "Edit this chord in the Chord Finder" }, "\u270E"),
                         React.createElement("button", { onClick: () => onMove(slot.id, 1), disabled: i === progression.length - 1 }, "\u25B8"))));
             })),
             detectedKey && (React.createElement("div", { className: "prog-key-row" },
@@ -1656,7 +1744,7 @@ const QUALITY_GROUPS = [
     { label: "Extended", qualities: ["maj9", "min9", "9", "6/9"] },
     { label: "Altered", qualities: ["7b5", "7b9", "7#9", "aug7"] },
 ];
-function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, palette }) {
+function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette }) {
     var _a, _b, _c, _d;
     const [menuOpen, setMenuOpen] = useState(false);
     const cardRef = useRef(null);
@@ -1722,6 +1810,13 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
             : null;
         onAddToProgression(effective, settings, custom);
     };
+    const handleEdit = (e) => {
+        e.stopPropagation();
+        const custom = (instrument === "guitar" && guitarShape && guitarSupported)
+            ? { frets: [...guitarShape.frets], barre: guitarShape.barre || null, capoFret: guitarShape.capoFret || 0 }
+            : null;
+        onEdit(effective, settings, custom);
+    };
     return (React.createElement("div", { ref: cardRef, className: `chord-card ${menuOpen ? "menu-open" : ""}`, style: { animationDelay: `${index * 60}ms` }, onClick: () => onPlay(effective, settings), role: "button", tabIndex: 0, onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onPlay(effective, settings);
@@ -1732,7 +1827,9 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
                 React.createElement("button", { className: `chord-quality-btn ${isOverridden ? "overridden" : ""}`, onClick: toggleMenu, title: "Change chord type" },
                     QUALITY_LABEL[effective.quality] || effective.quality,
                     " \u25BE")),
-            React.createElement("button", { className: "add-to-prog", onClick: handleAdd, title: "Add to progression" }, "+")),
+            React.createElement("div", { className: "card-actions" },
+                React.createElement("button", { className: "card-edit-btn", onClick: handleEdit, title: "Open in Chord Finder to modify" }, "\u270E"),
+                React.createElement("button", { className: "add-to-prog", onClick: handleAdd, title: "Add to progression" }, "+"))),
         menuOpen && (React.createElement("div", { className: "quality-picker-menu", onClick: stop },
             isOverridden && (React.createElement("button", { className: "quality-reset", onClick: resetQuality },
                 "\u21BA reset to ",
@@ -2242,6 +2339,32 @@ function ChordModesApp() {
     };
     const removeFromProgression = (id) => setProgression((prev) => prev.filter((s) => s.id !== id));
     const updateSlotSettings = (id, patch) => setProgression((prev) => prev.map((s) => (s.id === id ? Object.assign(Object.assign({}, s), { settings: Object.assign(Object.assign({}, s.settings), patch) }) : s)));
+    // Send a chord (from a card or a progression slot) into the Chord Finder for editing
+    const [finderLoad, setFinderLoad] = useState(null);
+    const sendToFinder = (chord, settings, custom, slotId, label) => {
+        var _a;
+        const midi = chordToMidi(chord, settings, custom, "piano");
+        let frets = null;
+        if (custom && custom.frets)
+            frets = custom.frets;
+        else {
+            const vs = chord.voicings || [];
+            const sh = ((settings === null || settings === void 0 ? void 0 : settings.inversion) > 0
+                ? generateInversionVoicing(chord.rootIdx, chord.quality, settings.inversion)
+                : vs[(_a = settings === null || settings === void 0 ? void 0 : settings.voicingIdx) !== null && _a !== void 0 ? _a : 0] || vs[0] || chord.shape);
+            if (sh && sh.frets)
+                frets = sh.frets;
+        }
+        setFinderLoad({
+            token: Date.now() + Math.random(),
+            instrument, frets, midi,
+            slotId: slotId || null,
+            label: label || chord.name,
+        });
+    };
+    // Replace a slot's chord entirely (used when editing a slot in the finder)
+    const replaceSlotChord = (id, chord, settings, custom) => setProgression((prev) => prev.map((s) => (s.id === id
+        ? Object.assign(Object.assign({}, s), { chord: Object.assign({}, chord), settings: Object.assign(Object.assign({}, s.settings), settings), custom }) : s)));
     const exportMidi = () => {
         if (progression.length === 0)
             return;
@@ -2353,7 +2476,7 @@ function ChordModesApp() {
                     React.createElement("div", { className: "brand-title" }, "Modal Chords"),
                     React.createElement("div", { className: "brand-sub" }, "Seven modes \u00B7 twelve roots \u00B7 the diatonic family"))),
             React.createElement("button", { className: "play-all", onClick: playSequence }, "\u25B8 Play scale")),
-        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi }),
+        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi, onEditSlot: (slot) => sendToFinder(slot.chord, slot.settings, slot.custom, slot.id, slot.chord.name) }),
         React.createElement("section", { className: "controls" },
             React.createElement("div", { className: "control-row" },
                 React.createElement("div", { className: "control-block" },
@@ -2384,7 +2507,7 @@ function ChordModesApp() {
             React.createElement("div", { className: "control-block" },
                 React.createElement("label", { className: "control-label" }, "Mode"),
                 React.createElement("div", { className: "mode-grid" }, MODE_NAMES.map((m) => (React.createElement("button", { key: m, className: `mode-pill ${m === modeName ? "active" : ""}`, onClick: () => setModeName(m) }, m)))))),
-        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord }),
+        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord, loadRequest: finderLoad, onUpdateSlot: replaceSlotChord, onCancelEdit: () => setFinderLoad(null) }),
         React.createElement(ScaleFinder, { instrument: instrument, palette: palette, onSelectScale: (r, m) => { setRootIdx(r); setModeName(m); }, onPlayNote: finderPlayNote }),
         React.createElement("section", { className: "mode-banner", key: animKey },
             React.createElement("div", { className: "mode-banner-inner" },
@@ -2406,7 +2529,7 @@ function ChordModesApp() {
                 React.createElement("div", { className: "scale-notes" }, mode.intervals.map((iv, i) => (React.createElement("span", { key: i, className: "scale-note" },
                     React.createElement("span", { className: "scale-deg" }, i + 1),
                     React.createElement("span", { className: "scale-name" }, NOTES[(rootIdx + iv) % 12]))))))),
-        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, palette: palette })))),
+        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, onEdit: (c, st, cu) => sendToFinder(c, st, cu, null, c.name), palette: palette })))),
         React.createElement(ScaleMapSection, { rootIdx: rootIdx, modeName: modeName, instrument: instrument, palette: palette, chords: chords, onPlayNote: finderPlayNote }),
         React.createElement("footer", { className: "footer" },
             "tap any chord to play \u00B7 use ",
@@ -3018,6 +3141,49 @@ const styles = `
 }
 .add-to-prog:hover { background: var(--gold); color: var(--bg); border-color: var(--gold); transform: scale(1.08); }
 .add-to-prog:active { transform: scale(0.95); }
+.card-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.card-edit-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface-3); border: 1px solid var(--line-soft); color: var(--ink-3);
+  cursor: pointer; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  transition: all 0.18s ease; padding: 0;
+}
+.card-edit-btn:hover { background: var(--copper); color: var(--bg); border-color: var(--copper); transform: scale(1.08); }
+.card-edit-btn:active { transform: scale(0.95); }
+
+/* Chord finder: octave window + edit banner */
+.finder-octave-bar {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 10px; margin: 2px 0 10px;
+}
+.finder-oct-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+  background: transparent; color: var(--ink-3); border: 1px solid var(--line-soft);
+  padding: 5px 11px; border-radius: 999px; cursor: pointer; transition: all 0.16s ease;
+}
+.finder-oct-btn:hover:not(:disabled) { color: var(--gold); border-color: rgba(212,169,106,0.45); }
+.finder-oct-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.finder-oct-range {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-2);
+  letter-spacing: 0.06em; min-width: 78px; text-align: center;
+}
+.finder-offscreen {
+  font-family: 'Fraunces', serif; font-style: italic; font-size: 11px; color: var(--copper);
+}
+.finder-edit-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 10px; padding: 7px 12px;
+  background: rgba(201, 122, 90, 0.1); border: 1px solid rgba(201, 122, 90, 0.35);
+  border-radius: 8px;
+  font-family: 'Fraunces', serif; font-style: italic; font-size: 12px; color: var(--ink-2);
+}
+.finder-edit-banner strong { font-style: normal; color: var(--copper); }
+.finder-edit-cancel {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+  background: transparent; border: 1px solid var(--line-soft); color: var(--ink-3);
+  padding: 3px 9px; border-radius: 999px; cursor: pointer; transition: all 0.16s ease;
+}
+.finder-edit-cancel:hover { color: var(--ink); border-color: var(--line); }
 
 .chord-name-wrap { margin-bottom: 4px; }
 .chord-name { font-family: 'Fraunces', serif; font-weight: 400; letter-spacing: -0.02em; margin: 0; line-height: 1; color: var(--ink); }
@@ -3110,18 +3276,6 @@ ReactDOM.createRoot(__rootEl).render(React.createElement(ChordModesApp));
   }
 }
 __start();
-</script>
-
-<!-- ===== PWA: offline cache. Only registers over https (GitHub Pages) or
-     localhost; silently skipped when opened as a local file. ===== -->
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./sw.js').catch(function (e) {
-      console.warn('Service worker not registered:', e);
-    });
-  });
-}
 </script>
 </body>
 </html>
