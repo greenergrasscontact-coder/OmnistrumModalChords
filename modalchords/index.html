@@ -76,6 +76,21 @@ const CHORD_INTERVALS = {
     "9": [0, 4, 7, 10, 14],
     "6/9": [0, 4, 7, 9, 14],
     mMaj9: [0, 3, 7, 11, 14],
+    // 11th chords. The dominant 11 conventionally omits the 3rd (it clashes with
+    // the 11), which is why "11" has no 3rd; ♯11 chords keep the 3rd.
+    "11": [0, 7, 10, 14, 17],
+    min11: [0, 3, 7, 10, 14, 17],
+    maj11: [0, 4, 7, 11, 14, 17],
+    "maj7#11": [0, 4, 7, 11, 18],
+    "7#11": [0, 4, 7, 10, 18],
+    add11: [0, 4, 7, 17],
+    // 13th chords. Full 13ths are usually voiced without the 11th (and often
+    // without the 5th) — these are the practical stacks players actually use.
+    "13": [0, 4, 7, 10, 14, 21],
+    min13: [0, 3, 7, 10, 14, 21],
+    maj13: [0, 4, 7, 11, 14, 21],
+    "13b9": [0, 4, 7, 10, 13, 21],
+    "7b13": [0, 4, 7, 10, 20],
     // Altered dominants
     "7b9": [0, 4, 7, 10, 13],
     "7#9": [0, 4, 7, 10, 15],
@@ -96,6 +111,10 @@ const QUALITY_LABEL = {
     "6": "major 6", m6: "minor 6",
     add9: "add 9", madd9: "min add 9",
     maj9: "maj 9", min9: "min 9", "9": "dom 9", "6/9": "6/9", mMaj9: "min/maj 9",
+    "11": "dom 11", min11: "min 11", maj11: "maj 11",
+    "maj7#11": "maj 7 ♯11", "7#11": "dom 7 ♯11", add11: "add 11",
+    "13": "dom 13", min13: "min 13", maj13: "maj 13",
+    "13b9": "dom 13 ♭9", "7b13": "dom 7 ♭13",
     "7b9": "dom 7 ♭9", "7#9": "dom 7 ♯9",
     "5": "power (5)", maj7no3: "maj 7 (no 3)", "7no3": "dom 7 (no 3)",
 };
@@ -189,6 +208,17 @@ function chordName(rootIdx, quality) {
         case "9": return note + "9";
         case "6/9": return note + "6/9";
         case "mMaj9": return note + "mMaj9";
+        case "11": return note + "11";
+        case "min11": return note + "m11";
+        case "maj11": return note + "maj11";
+        case "maj7#11": return note + "maj7\u266f11";
+        case "7#11": return note + "7\u266f11";
+        case "add11": return note + "add11";
+        case "13": return note + "13";
+        case "min13": return note + "m13";
+        case "maj13": return note + "maj13";
+        case "13b9": return note + "13\u266d9";
+        case "7b13": return note + "7\u266d13";
         case "7b9": return note + "7♭9";
         case "7#9": return note + "7♯9";
         case "5": return note + "5";
@@ -506,6 +536,49 @@ const OPEN_OVERRIDES = {
     "10-aug": { frets: [null, 1, 0, 3, 3, 2] },
     "11-aug": { frets: [null, 2, 1, 0, 0, 3] },
 };
+// Movable barre-shape offsets, relative to the root fret on string 6 (E shape)
+// or string 5 (A shape). Shared by getChordShape and getChordVoicings so both
+// always agree. Extended chords (9ths, 11ths, 13ths) commonly omit the 5th —
+// and the dominant 11 omits the 3rd — which is standard practice, not an error.
+const E_SHAPE_OFFSETS = {
+    maj: [0, 2, 2, 1, 0, 0], min: [0, 2, 2, 0, 0, 0],
+    maj7: [0, 2, 1, 1, 0, 0], min7: [0, 2, 0, 0, 0, 0], dom7: [0, 2, 0, 1, 0, 0],
+    sus2: [0, 2, 2, -1, 0, 0], sus4: [0, 2, 2, 2, 0, 0],
+    "6": [0, 2, 2, 1, 2, 0], add9: [0, 2, 2, 1, 0, 2],
+    // Extended, root on string 6
+    maj9: [0, -1, 1, -1, null, null],
+    min9: [0, -2, 0, -1, null, null],
+    "9": [0, -1, 0, -1, null, null],
+    "13": [0, -1, 0, -1, 2, null],
+    min13: [0, -2, 0, -1, 2, null],
+};
+const A_SHAPE_OFFSETS = {
+    maj: [null, 0, 2, 2, 2, 0], min: [null, 0, 2, 2, 1, 0],
+    maj7: [null, 0, 2, 1, 2, 0], min7: [null, 0, 2, 0, 1, 0], dom7: [null, 0, 2, 0, 2, 0],
+    sus2: [null, 0, 2, 2, 0, 0], sus4: [null, 0, 2, 2, 3, 0],
+    "6": [null, 0, 2, 2, 2, 2], m6: [null, 0, 2, 2, 1, 2],
+    add9: [null, 0, 2, 4, 0, 0], "7sus4": [null, 0, 2, 0, 3, 0],
+    "7sus2": [null, 0, 2, 0, 0, 0],
+    // Extended, root on string 5
+    maj9: [null, 0, -1, 1, 0, null],
+    min9: [null, 0, -2, 0, 0, 0],
+    "9": [null, 0, -1, 0, 0, null],
+    "6/9": [null, 0, -1, -1, 0, 0],
+    mMaj9: [null, 0, -2, 1, 0, null],
+    "11": [null, 0, 0, 0, 0, 0],
+    min11: [null, 0, 0, 0, 1, 0],
+    maj11: [null, 0, null, 1, 0, -2],
+    "7#11": [null, 0, -1, 0, null, -1],
+    "maj7#11": [null, 0, -1, 1, null, -1],
+    "13": [null, 0, -1, 0, 0, 2],
+    min13: [null, 0, -2, 0, 0, 2],
+    maj13: [null, 0, -1, 1, 0, 2],
+    "13b9": [null, 0, -1, 0, -1, 2],
+    "7b13": [null, 0, -1, 0, null, 1],
+    // add11 keeps the 3rd and the 11th a semitone apart, so they're split across
+    // octaves: R 3 5 R 11 (needs the root at fret 3 or higher)
+    add11: [null, 0, -1, -3, -2, -2],
+};
 function getChordShape(rootIdx, quality) {
     var _a;
     const key = `${rootIdx}-${quality}`;
@@ -514,20 +587,8 @@ function getChordShape(rootIdx, quality) {
     const fret6 = (rootIdx - 4 + 12) % 12;
     const fret5 = (rootIdx - 9 + 12) % 12;
     const useEShape = fret6 >= 1 && fret6 <= 4;
-    const eShapeOffsets = {
-        maj: [0, 2, 2, 1, 0, 0], min: [0, 2, 2, 0, 0, 0],
-        maj7: [0, 2, 1, 1, 0, 0], min7: [0, 2, 0, 0, 0, 0], dom7: [0, 2, 0, 1, 0, 0],
-        sus2: [0, 2, 2, -1, 0, 0], sus4: [0, 2, 2, 2, 0, 0],
-        "6": [0, 2, 2, 1, 2, 0], add9: [0, 2, 2, 1, 0, 2],
-    };
-    const aShapeOffsets = {
-        maj: [null, 0, 2, 2, 2, 0], min: [null, 0, 2, 2, 1, 0],
-        maj7: [null, 0, 2, 1, 2, 0], min7: [null, 0, 2, 0, 1, 0], dom7: [null, 0, 2, 0, 2, 0],
-        sus2: [null, 0, 2, 2, 0, 0], sus4: [null, 0, 2, 2, 3, 0],
-        "6": [null, 0, 2, 2, 2, 2], m6: [null, 0, 2, 2, 1, 2],
-        add9: [null, 0, 2, 4, 0, 0], "7sus4": [null, 0, 2, 0, 3, 0],
-        "7sus2": [null, 0, 2, 0, 0, 0],
-    };
+    const eShapeOffsets = E_SHAPE_OFFSETS;
+    const aShapeOffsets = A_SHAPE_OFFSETS;
     // Variant chord types use lighter touch — no barre indicator since they're
     // typically fingered piecemeal rather than full barre.
     const isVariantQuality = ((_a = VARIANT_QUALITIES === null || VARIANT_QUALITIES === void 0 ? void 0 : VARIANT_QUALITIES.has) === null || _a === void 0 ? void 0 : _a.call(VARIANT_QUALITIES, quality)) ||
@@ -662,20 +723,8 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         push({ frets: [...openOverride.frets], barre: null });
     }
     // Pattern offsets (must mirror getChordShape for consistency)
-    const eOffs = {
-        maj: [0, 2, 2, 1, 0, 0], min: [0, 2, 2, 0, 0, 0],
-        maj7: [0, 2, 1, 1, 0, 0], min7: [0, 2, 0, 0, 0, 0], dom7: [0, 2, 0, 1, 0, 0],
-        sus2: [0, 2, 2, -1, 0, 0], sus4: [0, 2, 2, 2, 0, 0],
-        "6": [0, 2, 2, 1, 2, 0], add9: [0, 2, 2, 1, 0, 2],
-    };
-    const aOffs = {
-        maj: [null, 0, 2, 2, 2, 0], min: [null, 0, 2, 2, 1, 0],
-        maj7: [null, 0, 2, 1, 2, 0], min7: [null, 0, 2, 0, 1, 0], dom7: [null, 0, 2, 0, 2, 0],
-        sus2: [null, 0, 2, 2, 0, 0], sus4: [null, 0, 2, 2, 3, 0],
-        "6": [null, 0, 2, 2, 2, 2], m6: [null, 0, 2, 2, 1, 2],
-        add9: [null, 0, 2, 4, 0, 0], "7sus4": [null, 0, 2, 0, 3, 0],
-        "7sus2": [null, 0, 2, 0, 0, 0],
-    };
+    const eOffs = E_SHAPE_OFFSETS;
+    const aOffs = A_SHAPE_OFFSETS;
     const isVariant = ["sus2", "sus4", "aug", "add9", "6", "m6", "7sus4", "7sus2"].includes(quality);
     // 2. E-shape barre at low E root fret (root on string 6)
     if (eOffs[quality]) {
@@ -1741,7 +1790,9 @@ const QUALITY_GROUPS = [
     { label: "7ths", qualities: ["maj7", "min7", "dom7", "m7b5", "dim7", "mMaj7"] },
     { label: "6 & add 9", qualities: ["6", "m6", "add9", "madd9"] },
     { label: "Sus 7", qualities: ["7sus4", "7sus2"] },
-    { label: "Extended", qualities: ["maj9", "min9", "9", "6/9"] },
+    { label: "Extended", qualities: ["maj9", "min9", "9", "6/9", "mMaj9"] },
+    { label: "11ths", qualities: ["11", "min11", "maj11", "7#11", "maj7#11", "add11"] },
+    { label: "13ths", qualities: ["13", "min13", "maj13", "13b9", "7b13"] },
     { label: "Altered", qualities: ["7b5", "7b9", "7#9", "aug7"] },
 ];
 function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette }) {
@@ -1957,92 +2008,70 @@ function ScaleKeyboardMap({ rootIdx, modeName, highlightChord, palette, showDegr
         : null;
     const chordRootPc = highlightChord ? highlightChord.rootIdx : null;
     const NUM_OCTAVES = 3;
-    const WHITE_W = 32, WHITE_H = 130;
-    const BLACK_W = 20, BLACK_H = 80;
-    const totalWhites = 7 * NUM_OCTAVES;
-    const W = totalWhites * WHITE_W + 2;
-    const H = WHITE_H + 4;
+    const WHITE_W = 34, WHITE_H = 132;
+    const BLACK_W = 21, BLACK_H = 82;
+    const W = 7 * NUM_OCTAVES * WHITE_W + 2;
+    const H = WHITE_H + 18;
     const accentRoot = palette.maj;
     const accentChord = palette.dom;
     const accentTone = palette.min;
     const WHITE_PCS = [0, 2, 4, 5, 7, 9, 11];
     const BLACK_AFTER = [true, true, false, true, true, true, false];
     const BLACK_PCS_AFTER = [1, 3, null, 6, 8, 10, null];
-    const keys = [];
+    const whites = [], blacks = [];
     for (let o = 0; o < NUM_OCTAVES; o++) {
         for (let i = 0; i < 7; i++) {
-            const pc = WHITE_PCS[i];
-            const x = (o * 7 + i) * WHITE_W + 1;
-            keys.push({ pc, x, w: WHITE_W, h: WHITE_H, isBlack: false, idx: o * 7 + i, midi: 48 + o * 12 + pc });
+            whites.push({ pc: WHITE_PCS[i], x: (o * 7 + i) * WHITE_W + 1, midi: 48 + o * 12 + WHITE_PCS[i] });
+            if (BLACK_AFTER[i]) {
+                blacks.push({
+                    pc: BLACK_PCS_AFTER[i],
+                    x: (o * 7 + i) * WHITE_W + WHITE_W - BLACK_W / 2 + 1,
+                    midi: 48 + o * 12 + BLACK_PCS_AFTER[i],
+                });
+            }
         }
     }
-    for (let o = 0; o < NUM_OCTAVES; o++) {
-        for (let i = 0; i < 7; i++) {
-            if (!BLACK_AFTER[i])
-                continue;
-            const pc = BLACK_PCS_AFTER[i];
-            const x = (o * 7 + i) * WHITE_W + WHITE_W - BLACK_W / 2 + 1;
-            keys.push({ pc, x, w: BLACK_W, h: BLACK_H, isBlack: true, midi: 48 + o * 12 + pc });
-        }
-    }
-    // Returns { fill, label, labelFill } for a key. Scale tones are now given
-    // solid, saturated fills (not faint tints) so the keys are clearly highlighted.
-    const styleFor = (pc, isBlack) => {
-        const inScale = scalePcs.has(pc);
-        const inChord = (chordPcs === null || chordPcs === void 0 ? void 0 : chordPcs.has(pc)) || false;
-        const isRoot = pc === rootIdx;
-        const isChordRoot = pc === chordRootPc;
-        const baseFill = isBlack ? "var(--bg)" : "var(--ink-2)";
-        let fill = baseFill, label = null, labelFill = "var(--bg)";
-        const txt = showDegrees ? pcLabel[pc] : NOTES[pc];
+    // Keys keep their natural black/white colouring; scale membership is shown by
+    // a marker dot on the key — the same visual language as the fretboard map, so
+    // the two read identically instead of relying on hard-to-judge tints.
+    const styleFor = (pc) => {
+        const isScaleRoot = pc === rootIdx;
         if (chordPcs) {
-            if (isChordRoot) {
-                fill = accentRoot;
-                label = txt;
-            }
-            else if (inChord) {
-                fill = accentChord;
-                label = txt;
-            }
-            else if (isRoot) {
-                fill = accentRoot;
-                label = txt;
-            }
-            else if (inScale) {
-                fill = isBlack ? "rgba(212,169,106,0.55)" : "rgba(212,169,106,0.8)";
-                label = txt;
-                labelFill = "var(--bg)";
-            }
+            if (pc === chordRootPc)
+                return { fill: accentRoot, stroke: "none", txt: "var(--bg)", r: 11 };
+            if (chordPcs.has(pc))
+                return { fill: accentChord, stroke: "none", txt: "var(--bg)", r: 10 };
+            if (isScaleRoot)
+                return { fill: "transparent", stroke: accentRoot, txt: accentRoot, r: 10 };
+            if (scalePcs.has(pc))
+                return { fill: "transparent", stroke: "var(--ink-3)", txt: "var(--ink-3)", r: 8 };
+            return null;
         }
-        else {
-            if (isRoot) {
-                fill = accentRoot;
-                label = txt;
-            }
-            else if (tonicTriad.has(pc)) {
-                fill = accentTone;
-                label = txt;
-            } // 3rd & 5th — solid copper
-            else if (inScale) {
-                fill = isBlack ? "rgba(212,169,106,0.5)" : "rgba(212,169,106,0.78)";
-                label = txt;
-            } // color tones — gold tint
-        }
-        return { fill, label, labelFill };
+        if (isScaleRoot)
+            return { fill: accentRoot, stroke: "none", txt: "var(--bg)", r: 11 };
+        if (tonicTriad.has(pc))
+            return { fill: accentTone, stroke: "none", txt: "var(--bg)", r: 10 };
+        if (scalePcs.has(pc))
+            return { fill: "rgba(212, 169, 106, 0.2)", stroke: accentRoot, txt: accentRoot, r: 9 };
+        return null;
+    };
+    const markerFor = (key, pc, cx, cy) => {
+        const st = styleFor(pc);
+        if (!st)
+            return null;
+        return (React.createElement("g", { key: key, pointerEvents: "none" },
+            React.createElement("circle", { cx: cx, cy: cy, r: st.r, fill: st.fill, stroke: st.stroke, strokeWidth: 1.6 }),
+            React.createElement("text", { x: cx, y: cy + 3, textAnchor: "middle", className: "scale-map-note-label", fill: st.txt }, showDegrees ? pcLabel[pc] : NOTES[pc])));
     };
     return (React.createElement("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, className: "scale-keyboard-map-svg" },
-        keys.filter(k => !k.isBlack).map((k, i) => {
-            const { fill, label } = styleFor(k.pc, false);
-            return (React.createElement("g", { key: `w${i}`, onClick: onPlayNote ? () => onPlayNote(k.midi) : undefined, style: onPlayNote ? { cursor: "pointer" } : undefined },
-                React.createElement("rect", { x: k.x, y: 2, width: k.w - 1, height: k.h, rx: 3, fill: fill, stroke: "var(--line)", strokeWidth: 0.5 }),
-                label && (React.createElement("text", { x: k.x + k.w / 2, y: k.h - 8, textAnchor: "middle", className: "scale-keyboard-label", fill: "var(--bg)" }, label))));
-        }),
-        keys.filter(k => k.isBlack).map((k, i) => {
-            const { fill, label } = styleFor(k.pc, true);
-            return (React.createElement("g", { key: `b${i}`, onClick: onPlayNote ? () => onPlayNote(k.midi) : undefined, style: onPlayNote ? { cursor: "pointer" } : undefined },
-                React.createElement("rect", { x: k.x, y: 2, width: k.w, height: k.h, rx: 2, fill: fill, stroke: "var(--bg)", strokeWidth: 0.5 }),
-                label && (React.createElement("text", { x: k.x + k.w / 2, y: k.h - 6, textAnchor: "middle", className: "scale-keyboard-label-black", fill: "var(--bg)" }, label))));
-        })));
+        whites.map((k, i) => (React.createElement("rect", { key: `w${i}`, x: k.x, y: 2, width: WHITE_W - 1, height: WHITE_H, rx: 3, className: "skm-white", onClick: onPlayNote ? () => onPlayNote(k.midi) : undefined, style: onPlayNote ? { cursor: "pointer" } : undefined }))),
+        Array.from({ length: NUM_OCTAVES - 1 }, (_, i) => (React.createElement("line", { key: `oc${i}`, x1: (i + 1) * 7 * WHITE_W + 1, y1: 2, x2: (i + 1) * 7 * WHITE_W + 1, y2: WHITE_H + 2, className: "skm-octave-line", pointerEvents: "none" }))),
+        blacks.map((k, i) => (React.createElement("rect", { key: `b${i}`, x: k.x, y: 2, width: BLACK_W, height: BLACK_H, rx: 2, className: "skm-black", onClick: onPlayNote ? () => onPlayNote(k.midi) : undefined, style: onPlayNote ? { cursor: "pointer" } : undefined }))),
+        blacks.map((k, i) => markerFor(`bm${i}`, k.pc, k.x + BLACK_W / 2, BLACK_H - 14)),
+        whites.map((k, i) => markerFor(`wm${i}`, k.pc, k.x + (WHITE_W - 1) / 2, WHITE_H - 16)),
+        Array.from({ length: NUM_OCTAVES }, (_, o) => (React.createElement("text", { key: `ol${o}`, x: o * 7 * WHITE_W + WHITE_W / 2, y: H - 3, textAnchor: "middle", className: "scale-map-fret-num" },
+            "C",
+            o + 3)))));
 }
 function ScaleMapSection({ rootIdx, modeName, instrument, palette, chords, onPlayNote }) {
     const [chordIdx, setChordIdx] = useState(-1); // -1 = no chord highlight
@@ -2593,7 +2622,7 @@ const styles = `
   background: linear-gradient(180deg, rgba(34, 29, 23, 0.7), rgba(26, 22, 18, 0.7));
   border: 1px solid var(--line-soft); border-radius: 14px;
 }
-.prog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; }
+.prog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
 .prog-title-group { display: flex; align-items: baseline; gap: 10px; }
 .prog-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-2); }
 .prog-count { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-3); }
@@ -2637,7 +2666,7 @@ const styles = `
   margin-left: 8px;
   letter-spacing: 0.02em;
 }
-.prog-actions { display: flex; gap: 8px; }
+.prog-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .prog-clear, .prog-play {
   font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
   padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all 0.18s ease;
@@ -2650,6 +2679,7 @@ const styles = `
   padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all 0.18s ease;
 }
 .prog-export:hover { color: var(--gold); border-color: rgba(212,169,106,0.45); background: rgba(212,169,106,0.06); }
+.prog-actions > button { white-space: nowrap; flex-shrink: 0; }
 .prog-play { background: var(--gold); color: var(--bg); border: 1px solid var(--gold); padding: 6px 16px; font-weight: 600; }
 .prog-play:hover:not(:disabled) { background: var(--gold-bright); border-color: var(--gold-bright); }
 .prog-play:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -2964,7 +2994,8 @@ const styles = `
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
-  z-index: 30;
+  z-index: 120;
+  max-height: min(58vh, 420px); overflow-y: auto; overscroll-behavior: contain;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
   margin-top: 14px;
 }
@@ -3001,6 +3032,7 @@ const styles = `
 
 /* Scale map */
 .scale-map-section {
+  position: relative; z-index: 1;
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: 12px;
@@ -3082,9 +3114,11 @@ const styles = `
 .scale-map-note-label {
   font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700;
 }
-.scale-keyboard-label, .scale-keyboard-label-black {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
-}
+/* Scale-map keyboard: keys keep real piano colouring; scale tones are marked
+   with dots, matching the fretboard map's visual language. */
+.skm-white { fill: #e8dcc6; stroke: #7a6a52; stroke-width: 0.6; }
+.skm-black { fill: #1c1713; stroke: #000; stroke-width: 0.6; }
+.skm-octave-line { stroke: rgba(122, 106, 82, 0.55); stroke-width: 1.2; }
 .scale-map-legend {
   display: flex; flex-wrap: wrap; gap: 18px; margin-top: 10px;
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
@@ -3113,7 +3147,8 @@ const styles = `
 .scale-name { font-family: 'Fraunces', serif; font-size: 14px; color: var(--ink); font-weight: 500; }
 
 /* Chord cards */
-.chord-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.chord-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;
+  position: relative; z-index: 20; }
 .chord-card {
   position: relative; text-align: left; overflow: visible; z-index: 1;
   background: linear-gradient(165deg, var(--surface-2) 0%, var(--surface) 100%);
@@ -3264,6 +3299,17 @@ const styles = `
   .finder-body { padding: 4px 16px 18px; }
   .finder-chord-name { font-size: 28px; }
   .finder-actions { gap: 6px; }
+  /* Keep every header control reachable on a narrow phone: the action buttons
+     get their own full-width row instead of overflowing off-screen. */
+  .prog-header { flex-direction: column; align-items: stretch; }
+  .prog-actions { justify-content: flex-start; width: 100%; }
+  .prog-actions > button { flex: 1 1 auto; text-align: center; }
+  .prog-playback { gap: 10px; }
+  .prog-playback .prog-play { flex: 1 1 100%; }
+  .prog-tempo { min-width: 100%; }
+  .scale-map-section { padding: 14px; }
+  .scale-map-chord-bar { gap: 6px; }
+  .scale-map-label-toggle { margin-left: 0; }
 }
 `;
 const __rootEl = document.getElementById("root");
