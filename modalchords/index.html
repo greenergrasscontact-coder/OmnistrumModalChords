@@ -429,6 +429,224 @@ function identifyFromMidiNotes(midiNotes) {
     });
     return matches;
 }
+// ─── Constructive chord naming ───────────────────────────────────────────────
+// The dictionary lookup above can only name pitch-class sets it has a template
+// for. This builds a chord symbol from the intervals themselves, so ANY set of
+// notes gets a sensible name (e.g. C E B♭ D → "C9(no5)", C E G A B♭ → "C7(13)").
+// Interval-name table for two-note selections
+const DYAD_NAMES = {
+    1: "minor 2nd", 2: "major 2nd", 3: "minor 3rd", 4: "major 3rd",
+    5: "perfect 4th", 6: "tritone", 7: "perfect 5th", 8: "minor 6th",
+    9: "major 6th", 10: "minor 7th", 11: "major 7th",
+};
+// Analyse the interval set relative to a candidate root and produce a chord
+// symbol plus a plausibility score. Returns null if the root isn't present.
+function describeChord(pcs, rootPc) {
+    const s = new Set(pcs.map((p) => ((p - rootPc) % 12 + 12) % 12));
+    if (!s.has(0))
+        return null;
+    const has = (x) => s.has(x);
+    const N = { note: NOTES[rootPc] };
+    // ---- third -------------------------------------------------------------
+    let third = has(4) ? "maj" : has(3) ? "min" : null;
+    let sharpNine = false;
+    if (has(4) && has(3)) {
+        third = "maj";
+        sharpNine = true;
+    } // ♭3 over a major 3rd = ♯9
+    let sus = null;
+    if (!third) {
+        if (has(5))
+            sus = "sus4";
+        else if (has(2))
+            sus = "sus2";
+    }
+    // ---- fifth (and its alterations) ---------------------------------------
+    const perfect5 = has(7);
+    let fifth = perfect5 ? "P" : has(6) ? "b5" : has(8) ? "#5" : null;
+    // With a perfect 5th present, ♭5/♯5 spellings become ♯11 / ♭13 colour tones
+    const sharp11 = has(6) && perfect5;
+    const flat13 = has(8) && perfect5;
+    // ---- seventh / sixth ---------------------------------------------------
+    const maj7 = has(11), flat7 = has(10);
+    const nine = has(9); // 9 semitones = 6th, or 13th when a 7th is present
+    let seventh = maj7 ? "maj7" : flat7 ? "b7" : null;
+    // Fully diminished: min 3rd + ♭5 + double-flat 7 (enharmonically 9 semitones)
+    const isDim7 = third === "min" && fifth === "b5" && nine && !seventh;
+    // ---- extensions --------------------------------------------------------
+    const two = has(2), flatNine = has(1), eleven = has(5);
+    const hasThirteen = nine && !!seventh;
+    const hasSixth = nine && !seventh && !isDim7;
+    // ---- assemble the symbol ----------------------------------------------
+    let sym = "", quality = "";
+    const alts = [];
+    // Half-diminished and diminished need their conventional symbols, but must
+    // still show extensions (Cm7♭5 with a 9th is Cm9♭5, not Cm7♭5).
+    const halfDim = third === "min" && fifth === "b5" && flat7;
+    const dimTriad = third === "min" && fifth === "b5" && !flat7 && !isDim7;
+    if (isDim7) {
+        sym = "\u00b07";
+        quality = "dim7";
+        if (two)
+            alts.push("9");
+        if (eleven)
+            alts.push("11");
+    }
+    else if (halfDim) {
+        quality = "m7b5";
+        const ext = (nine && two) ? "13" : (eleven && two) ? "11" : two ? "9" : "7";
+        sym = "m" + ext + "\u266d5";
+        if (nine && !two)
+            alts.push("13");
+        if (eleven && ext !== "11")
+            alts.push("11");
+        if (flatNine)
+            alts.push("\u266d9");
+    }
+    else if (dimTriad) {
+        quality = "dim";
+        sym = "\u00b0";
+        if (two)
+            alts.push("9");
+        if (eleven)
+            alts.push("11");
+        if (maj7)
+            alts.push("maj7");
+    }
+    else {
+        // base quality
+        if (third === "min") {
+            sym = "m";
+            quality = "min";
+        }
+        else if (third === "maj") {
+            sym = "";
+            quality = "maj";
+        }
+        else if (sus) {
+            sym = sus === "sus4" ? "sus4" : "sus2";
+            quality = sus;
+        }
+        else {
+            sym = "5";
+            quality = "5";
+        } // root + 5th only (or root + colour)
+        // highest tertian extension
+        let ext = null;
+        if (seventh) {
+            if (hasThirteen && two)
+                ext = "13";
+            else if (eleven && two && third !== "maj")
+                ext = "11";
+            else if (two)
+                ext = "9";
+            else
+                ext = "7";
+        }
+        if (seventh === "maj7") {
+            // maj7 family: C, Cmaj7, Cmaj9, Cmaj13 …
+            sym += (third === "min") ? ("Maj" + (ext === "7" ? "7" : ext)) : ("maj" + (ext === "7" ? "7" : ext));
+            quality = third === "min" ? "mMaj7" : "maj7";
+        }
+        else if (seventh === "b7") {
+            if (sus)
+                sym = "7" + sym; // 7sus4 / 7sus2
+            else
+                sym += ext; // C7, C9, C11, C13, Cm7, Cm9 …
+            quality = third === "min" ? "min7" : "dom7";
+        }
+        else if (hasSixth) {
+            sym += two ? "6/9" : "6";
+            quality = third === "min" ? "m6" : "6";
+        }
+        else if (two && !sus) {
+            sym += "(add9)";
+            quality = third === "min" ? "madd9" : "add9";
+        }
+        // leftover colour tones that the extension name didn't already cover
+        if (hasThirteen && !two && seventh)
+            alts.push("13");
+        if (eleven && !(ext === "11") && !sus && third)
+            alts.push("11");
+        if (fifth === "b5" && !isDim7 && third !== "min")
+            alts.push("\u266d5");
+        if (fifth === "#5")
+            alts.push(third ? "\u266f5" : "\u266f5");
+        if (sharp11)
+            alts.push("\u266f11");
+        if (flat13)
+            alts.push("\u266d13");
+        if (flatNine)
+            alts.push("\u266d9");
+        if (sharpNine)
+            alts.push("\u266f9");
+    }
+    // augmented triad shorthand
+    if (third === "maj" && fifth === "#5" && !seventh && !nine && !two) {
+        sym = "+";
+        quality = "aug";
+        alts.length = 0;
+    }
+    // note omissions that change how the symbol reads
+    const omits = [];
+    if (!fifth && third && !sus)
+        omits.push("5");
+    if (!third && !sus && (seventh || two || nine))
+        omits.push("3");
+    let name = N.note + sym;
+    if (alts.length)
+        name += "(" + alts.join(",") + ")";
+    if (omits.length)
+        name += "(no" + omits.join(",") + ")";
+    // ---- plausibility score (lower is better) ------------------------------
+    let score = alts.length * 2 + omits.length * 3;
+    if (!third && !sus)
+        score += 4; // rootless/ambiguous readings are weaker
+    if (!fifth)
+        score += 1;
+    if (!seventh && !nine && s.size > 3)
+        score += 1;
+    return { name, quality, score, intervals: [...s].sort((a, b) => a - b) };
+}
+// Name any selection of notes, exact templates first, constructed names after.
+function nameAnyChord(midiNotes) {
+    if (midiNotes.length < 2)
+        return [];
+    const sorted = [...midiNotes].sort((a, b) => a - b);
+    const bassPc = ((sorted[0] % 12) + 12) % 12;
+    const pcs = [...new Set(sorted.map((m) => ((m % 12) + 12) % 12))];
+    // Two notes: name the interval rather than guessing a chord
+    if (pcs.length === 2) {
+        const iv = (pcs[1] - pcs[0] + 12) % 12;
+        const exact = identifyFromMidiNotes(midiNotes);
+        if (exact.length)
+            return exact;
+        return [{
+                rootIdx: pcs[0], quality: "interval", inversion: 0, bassPc,
+                name: `${NOTES[pcs[0]]}\u2013${NOTES[pcs[1]]}`,
+                detail: DYAD_NAMES[iv] || "",
+                intervals: [0, iv], approx: true,
+            }];
+    }
+    const exact = identifyFromMidiNotes(midiNotes);
+    const seen = new Set(exact.map((m) => m.name));
+    const built = [];
+    for (const rootPc of pcs) {
+        const d = describeChord(pcs, rootPc);
+        if (!d || seen.has(d.name))
+            continue;
+        // inversion = index of the bass note within the chord's own intervals
+        const bassIv = ((bassPc - rootPc) % 12 + 12) % 12;
+        const inversion = Math.max(0, d.intervals.indexOf(bassIv));
+        built.push({
+            rootIdx: rootPc, quality: d.quality, name: d.name, inversion, bassPc,
+            intervals: d.intervals, approx: true,
+            score: d.score + (rootPc === bassPc ? 0 : 2),
+        });
+    }
+    built.sort((a, b) => a.score - b.score);
+    return exact.concat(built);
+}
 // Major-scale reference for naming modal degrees (1, ♭3, ♯4, ♭7 …)
 const MAJOR_REF = [0, 2, 4, 5, 7, 9, 11];
 function scaleDegreeLabels(modeName) {
@@ -1443,7 +1661,7 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                 .map((f, i) => (f === null ? null : OPEN_STRING_MIDI[i] + f))
                 .filter((m) => m !== null);
         }
-        return identifyFromMidiNotes(midiNotes);
+        return nameAnyChord(midiNotes);
     }, [instrument, pianoActive, guitarFrets]);
     const primary = identified[0];
     const accent = primary ? getAccent(primary.quality, palette) : palette.maj;
@@ -1472,7 +1690,7 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
             onPlayChord(sorted.map((m) => m - sorted[0]), sorted[0]);
             return;
         }
-        const intervals = applyInversion(CHORD_INTERVALS[primary.quality], primary.inversion);
+        const intervals = applyInversion(primary.intervals || CHORD_INTERVALS[primary.quality] || [0], primary.inversion);
         onPlayChord(intervals, 60 + primary.rootIdx);
     };
     const buildChordAndCustom = () => {
@@ -1480,6 +1698,9 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
             rootIdx: primary.rootIdx, quality: primary.quality, degree: "",
             name: primary.name, shape: getChordShape(primary.rootIdx, primary.quality),
             voicings: getChordVoicings(primary.rootIdx, primary.quality, 0),
+            // Constructed (non-dictionary) chords carry their own intervals so
+            // playback, diagrams and MIDI export all use the right notes.
+            intervals: primary.intervals || CHORD_INTERVALS[primary.quality],
         };
         // Capture the user's actual voicing so the saved chord plays/displays exactly
         // what they entered (rather than reverting to a generic root-position shape).
@@ -1529,12 +1750,16 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
     let statusText = null;
     if (noteCount === 0)
         statusText = "Select keys to identify a chord";
-    else if (selectedNoteNames.length < 3)
-        statusText = `Add ${3 - selectedNoteNames.length} more note${selectedNoteNames.length === 2 ? "" : "s"}`;
+    else if (selectedNoteNames.length < 2)
+        statusText = "Add one more note";
     else if (identified.length === 0)
-        statusText = `${selectedNoteNames.join(" · ")} — no standard chord match`;
+        statusText = `${selectedNoteNames.join(" · ")} — couldn't name these notes`;
+    // Constructed names already spell out their alterations, so don't re-wrap
+    // them in slash notation (which assumes a dictionary quality).
     const displayName = primary
-        ? getDisplayName({ rootIdx: primary.rootIdx, quality: primary.quality, name: primary.name }, primary.inversion)
+        ? (primary.approx
+            ? primary.name
+            : getDisplayName({ rootIdx: primary.rootIdx, quality: primary.quality, name: primary.name }, primary.inversion))
         : null;
     // Spell each selected note as a degree of the identified chord (R, 3, ♭7 …)
     const INTERVAL_DEGREE = { 0: "R", 1: "♭9", 2: "9", 3: "♭3", 4: "3", 5: "11", 6: "♭5", 7: "5", 8: "♯5", 9: "13", 10: "♭7", 11: "7" };
@@ -1584,15 +1809,15 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                 statusText && React.createElement("div", { className: "finder-status" }, statusText),
                 primary && (React.createElement("div", { className: "finder-chord-display" },
                     React.createElement("span", { className: "finder-chord-name", style: { color: accent } }, displayName),
-                    React.createElement("span", { className: "finder-chord-meta" },
-                        INVERSION_NAME[primary.inversion],
-                        " \u00B7 ",
-                        QUALITY_LABEL[primary.quality]),
+                    React.createElement("span", { className: "finder-chord-meta" }, primary.detail
+                        ? primary.detail
+                        : `${INVERSION_NAME[primary.inversion]} \u00b7 ${QUALITY_LABEL[primary.quality] || primary.quality}`),
                     spelled.length > 0 && (React.createElement("span", { className: "finder-chord-spelling" }, spelled.join("  ·  "))))),
                 identified.length > 1 && (React.createElement("div", { className: "finder-alternatives" },
                     "also",
                     " ",
-                    identified.slice(1).map((m) => getDisplayName({ rootIdx: m.rootIdx, quality: m.quality, name: m.name }, m.inversion)).join(", ")))),
+                    identified.slice(1, 6).map((m) => (m.approx ? m.name
+                        : getDisplayName({ rootIdx: m.rootIdx, quality: m.quality, name: m.name }, m.inversion))).join(", ")))),
             React.createElement("div", { className: "finder-actions" },
                 React.createElement("button", { className: "finder-btn-secondary", onClick: clearNotes, disabled: noteCount === 0 }, "Clear"),
                 React.createElement("button", { className: "finder-btn-secondary", onClick: playFound, disabled: !primary }, "\u25B8 Play"),
@@ -2164,7 +2389,7 @@ function chordToMidi(chord, settings, custom, instrument) {
             return custom.midi.map((m) => m + shift).sort((a, b) => a - b);
         }
     }
-    const baseIntervals = CHORD_INTERVALS[chord.quality];
+    const baseIntervals = chord.intervals || CHORD_INTERVALS[chord.quality];
     if (!baseIntervals)
         return [];
     if (instrument === "guitar") {
@@ -2297,7 +2522,7 @@ function ChordModesApp() {
         var _a;
         const { inversion = 0, octave = 0 } = settings || {};
         const pattern = (settings && settings.arp) || "off";
-        const baseIntervals = CHORD_INTERVALS[chord.quality];
+        const baseIntervals = chord.intervals || CHORD_INTERVALS[chord.quality];
         if (!baseIntervals)
             return;
         // Arpeggio: sound the voicing's notes one at a time in the chosen order
