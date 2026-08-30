@@ -1249,6 +1249,26 @@ function getChordsForMode(rootIdx, modeName, chordType, capoFret = 0) {
 // Audio
 // ─────────────────────────────────────────────────────────────────────────────
 const STRING_FREQS = [82.41, 110.0, 146.83, 196.0, 246.94, 329.63];
+// ─── Tone presets ────────────────────────────────────────────────────────────
+// Each preset shapes the oscillator mix, filter sweep and envelope. They're all
+// synthesised (no samples) so the file stays self-contained.
+const GUITAR_TONES = {
+    steel: { label: "Steel", wave: "triangle", harm: 0.35, harm3: 0, open: 3500, close: 700, q: 0.8, attack: 0.008, decay: 1.6, gain: 0.13 },
+    nylon: { label: "Nylon", wave: "sine", harm: 0.22, harm3: 0.05, open: 2200, close: 520, q: 0.5, attack: 0.014, decay: 1.9, gain: 0.15 },
+    clean: { label: "Clean", wave: "sawtooth", harm: 0.18, harm3: 0.08, open: 2600, close: 900, q: 1.6, attack: 0.006, decay: 2.2, gain: 0.085 },
+    muted: { label: "Muted", wave: "triangle", harm: 0.30, harm3: 0, open: 1600, close: 300, q: 1.0, attack: 0.005, decay: 0.42, gain: 0.16 },
+};
+const PIANO_TONES = {
+    grand: { label: "Grand", wave: "triangle", harm: 0.22, harm3: 0.07, open: 2800, close: 900, q: 0.4, attack: 0.012, decay: 2.6, gain: 0.09 },
+    rhodes: { label: "Rhodes", wave: "sine", harm: 0.42, harm3: 0.12, open: 1900, close: 620, q: 0.6, attack: 0.010, decay: 2.4, gain: 0.11 },
+    organ: { label: "Organ", wave: "sine", harm: 0.55, harm3: 0.35, open: 4000, close: 3600, q: 0.3, attack: 0.020, decay: 1.1, gain: 0.075, sustain: true },
+    celeste: { label: "Celeste", wave: "sine", harm: 0.30, harm3: 0.18, open: 5200, close: 2400, q: 0.5, attack: 0.004, decay: 1.5, gain: 0.10 },
+};
+const DEFAULT_TONE = { guitar: "steel", piano: "grand" };
+function toneFor(instrument, toneId) {
+    const table = instrument === "guitar" ? GUITAR_TONES : PIANO_TONES;
+    return table[toneId] || table[DEFAULT_TONE[instrument]];
+}
 function useAudio() {
     const ctxRef = useRef(null);
     const ensure = () => {
@@ -1260,97 +1280,74 @@ function useAudio() {
             ctxRef.current.resume();
         return ctxRef.current;
     };
-    const playGuitarStrum = (frets, octaveShift = 0, spread = 0.022) => {
+    // Build one voice with the given tone preset.
+    const voice = (ctx, freq, t, tone, dur) => {
+        const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator(), osc3 = ctx.createOscillator();
+        const harmGain = ctx.createGain(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+        osc1.type = tone.wave;
+        osc2.type = "sine";
+        osc3.type = "sine";
+        osc1.frequency.value = freq;
+        osc2.frequency.value = freq * 2.001;
+        osc3.frequency.value = freq * 3.003;
+        harmGain.gain.value = tone.harm;
+        const h3 = ctx.createGain();
+        h3.gain.value = tone.harm3 || 0;
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(tone.open, t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(120, tone.close), t + tone.decay * 0.85);
+        filter.Q.value = tone.q;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(tone.gain, t + tone.attack);
+        if (tone.sustain) {
+            // Organ-style: hold, then release
+            const hold = Math.max(0.25, (dur || tone.decay) - 0.12);
+            gain.gain.setValueAtTime(tone.gain, t + hold);
+            gain.gain.exponentialRampToValueAtTime(0.0008, t + hold + 0.16);
+        }
+        else {
+            gain.gain.exponentialRampToValueAtTime(0.0008, t + tone.decay);
+        }
+        osc1.connect(filter);
+        osc2.connect(harmGain);
+        harmGain.connect(filter);
+        osc3.connect(h3);
+        h3.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        const stopAt = t + (tone.sustain ? Math.max(0.5, dur || tone.decay) + 0.3 : tone.decay + 0.15);
+        osc1.start(t);
+        osc2.start(t);
+        osc3.start(t);
+        osc1.stop(stopAt);
+        osc2.stop(stopAt);
+        osc3.stop(stopAt);
+    };
+    const playGuitarStrum = (frets, octaveShift = 0, spread = 0.022, toneId, dur) => {
         const ctx = ensure();
         const start = ctx.currentTime;
+        const tone = toneFor("guitar", toneId);
         const octaveMul = Math.pow(2, octaveShift);
         let playedIdx = 0;
         frets.forEach((fret, stringIdx) => {
             if (fret === null)
                 return;
             const freq = STRING_FREQS[stringIdx] * Math.pow(2, fret / 12) * octaveMul;
-            const t = start + playedIdx * spread;
+            voice(ctx, freq, start + playedIdx * spread, tone, dur);
             playedIdx++;
-            const osc = ctx.createOscillator(), osc2 = ctx.createOscillator();
-            const filter = ctx.createBiquadFilter(), gain = ctx.createGain();
-            osc.type = "triangle";
-            osc2.type = "sine";
-            osc.frequency.value = freq;
-            osc2.frequency.value = freq * 2;
-            filter.type = "lowpass";
-            filter.frequency.setValueAtTime(3500, t);
-            filter.frequency.exponentialRampToValueAtTime(700, t + 1.4);
-            filter.Q.value = 0.8;
-            gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(0.13, t + 0.008);
-            gain.gain.exponentialRampToValueAtTime(0.0008, t + 1.6);
-            const mix = ctx.createGain();
-            mix.gain.value = 0.35;
-            osc.connect(filter);
-            osc2.connect(mix);
-            mix.connect(filter);
-            filter.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(t);
-            osc2.start(t);
-            osc.stop(t + 1.7);
-            osc2.stop(t + 1.7);
         });
     };
-    const synthChord = (intervals, baseMidi, timbre, spread) => {
+    const synthChord = (intervals, baseMidi, instrument, spread, toneId, dur) => {
         const ctx = ensure();
         const start = ctx.currentTime;
-        const stagger = spread != null ? spread : (timbre === "guitar" ? 0.022 : 0.005);
-        const sorted = [...intervals].sort((a, b) => a - b);
-        sorted.forEach((iv, i) => {
+        const tone = toneFor(instrument, toneId);
+        const stagger = spread != null ? spread : (instrument === "guitar" ? 0.022 : 0.005);
+        [...intervals].sort((a, b) => a - b).forEach((iv, i) => {
             const midi = baseMidi + iv;
-            const freq = 440 * Math.pow(2, (midi - 69) / 12);
-            const t = start + i * stagger;
-            const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator(), osc3 = ctx.createOscillator();
-            const harmGain = ctx.createGain(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
-            osc1.type = "triangle";
-            osc2.type = "sine";
-            osc3.type = "sine";
-            osc1.frequency.value = freq;
-            if (timbre === "guitar") {
-                osc2.frequency.value = freq * 2;
-                osc3.frequency.value = freq * 3.001;
-                harmGain.gain.value = 0.15;
-                filter.type = "lowpass";
-                filter.frequency.setValueAtTime(3200, t);
-                filter.frequency.exponentialRampToValueAtTime(750, t + 1.4);
-                filter.Q.value = 0.7;
-                gain.gain.setValueAtTime(0, t);
-                gain.gain.linearRampToValueAtTime(0.1, t + 0.008);
-                gain.gain.exponentialRampToValueAtTime(0.0008, t + 1.7);
-            }
-            else {
-                osc2.frequency.value = freq * 2.001;
-                osc3.frequency.value = freq * 3.005;
-                harmGain.gain.value = 0.22;
-                filter.type = "lowpass";
-                filter.frequency.setValueAtTime(2800, t);
-                filter.frequency.exponentialRampToValueAtTime(900, t + 2.2);
-                filter.Q.value = 0.4;
-                gain.gain.setValueAtTime(0, t);
-                gain.gain.linearRampToValueAtTime(0.09, t + 0.012);
-                gain.gain.exponentialRampToValueAtTime(0.0008, t + 2.6);
-            }
-            osc1.connect(filter);
-            osc2.connect(harmGain);
-            osc3.connect(harmGain);
-            harmGain.connect(filter);
-            filter.connect(gain);
-            gain.connect(ctx.destination);
-            osc1.start(t);
-            osc2.start(t);
-            osc3.start(t);
-            osc1.stop(t + 2.7);
-            osc2.stop(t + 2.7);
-            osc3.stop(t + 2.7);
+            voice(ctx, 440 * Math.pow(2, (midi - 69) / 12), start + i * stagger, tone, dur);
         });
     };
-    const playSingleNote = (midi, timbre) => synthChord([0], midi, timbre);
+    const playSingleNote = (midi, instrument, toneId, dur) => synthChord([0], midi, instrument, 0, toneId, dur);
     return { playGuitarStrum, synthChord, playSingleNote };
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1919,10 +1916,11 @@ function ScaleFinder({ instrument, palette, onSelectScale, onPlayNote }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Progression bar
 // ─────────────────────────────────────────────────────────────────────────────
-function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, presets, onApplyPreset, onUpdateSlot, onExport, onEditSlot }) {
+function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, playMode, presets, onApplyPreset, onUpdateSlot, onExport, onEditSlot, sections, activeIdx, onSelectSection, onAddSection, onRemoveSection, onRenameSection, onSetRepeats, onMoveSection, onSave, onLoad, tones, tone, setTone, onTranspose, onTransposeToKey, songKeyIdx }) {
     const isEmpty = progression.length === 0;
     const [showFingerings, setShowFingerings] = useState(true);
     const [showPresets, setShowPresets] = useState(false);
+    const [transposeScope, setTransposeScope] = useState("song");
     const detectedKey = useMemo(() => detectKey(progression), [progression]);
     return (React.createElement("section", { className: "progression" },
         React.createElement("div", { className: "prog-header" },
@@ -1936,14 +1934,35 @@ function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove
                 React.createElement("button", { className: `prog-toggle ${showPresets ? "active" : ""}`, onClick: () => setShowPresets((v) => !v), title: "Common progressions" }, showPresets ? "▾ Presets" : "▸ Presets"),
                 !isEmpty && (React.createElement("button", { className: `prog-toggle ${showFingerings ? "active" : ""}`, onClick: () => setShowFingerings((v) => !v), title: "Show fingerings" }, showFingerings ? "▾ Fingerings" : "▸ Fingerings")),
                 !isEmpty && React.createElement("button", { className: "prog-clear", onClick: onClear }, "Clear"),
-                !isEmpty && React.createElement("button", { className: "prog-export", onClick: onExport, title: "Download progression as a MIDI file" }, "\u2913 MIDI"))),
+                React.createElement("button", { className: "prog-export", onClick: onSave, title: "Save this project to a file" }, "\u2913 Save"),
+                React.createElement("button", { className: "prog-export", onClick: onLoad, title: "Open a saved project file" }, "\u2912 Open"),
+                !isEmpty && React.createElement("button", { className: "prog-export", onClick: () => onExport("song"), title: "Download all sections as a MIDI file" }, "\u2913 MIDI"))),
+        React.createElement("div", { className: "sec-bar" },
+            React.createElement("div", { className: "sec-tabs" },
+                sections.map((sec, i) => (React.createElement("div", { key: sec.id, className: `sec-tab ${i === activeIdx ? "active" : ""}` },
+                    React.createElement("button", { className: "sec-tab-main", onClick: () => onSelectSection(i) },
+                        React.createElement("span", { className: "sec-tab-name" }, sec.name),
+                        React.createElement("span", { className: "sec-tab-count" }, sec.slots.length)),
+                    React.createElement("span", { className: "sec-tab-rep", title: "Times this section repeats when playing the whole song" },
+                        React.createElement("button", { onClick: () => onSetRepeats(i, (sec.repeats || 1) - 1), disabled: (sec.repeats || 1) <= 1 }, "\u2212"),
+                        React.createElement("span", null,
+                            "\u00D7",
+                            sec.repeats || 1),
+                        React.createElement("button", { onClick: () => onSetRepeats(i, (sec.repeats || 1) + 1), disabled: (sec.repeats || 1) >= 16 }, "+"))))),
+                React.createElement("button", { className: "sec-add", onClick: onAddSection, title: "Add a section" }, "+ Section")),
+            sections[activeIdx] && (React.createElement("div", { className: "sec-edit" },
+                React.createElement("input", { className: "sec-name-input", value: sections[activeIdx].name, onChange: (e) => onRenameSection(activeIdx, e.target.value), "aria-label": "Section name" }),
+                React.createElement("button", { className: "sec-mini", onClick: () => onMoveSection(activeIdx, -1), disabled: activeIdx === 0, title: "Move section earlier" }, "\u25C2"),
+                React.createElement("button", { className: "sec-mini", onClick: () => onMoveSection(activeIdx, 1), disabled: activeIdx === sections.length - 1, title: "Move section later" }, "\u25B8"),
+                React.createElement("button", { className: "sec-mini danger", onClick: () => onRemoveSection(activeIdx), disabled: sections.length <= 1, title: "Delete this section" }, "\u2715")))),
         showPresets && (React.createElement("div", { className: "prog-presets" },
             React.createElement("span", { className: "prog-presets-label" }, "Build from the current key:"),
             React.createElement("div", { className: "prog-presets-row" }, presets.map((p) => (React.createElement("button", { key: p.name, className: "preset-pill", onClick: () => { onApplyPreset(p); setShowPresets(false); }, title: p.blurb },
                 React.createElement("span", { className: "preset-name" }, p.name),
                 React.createElement("span", { className: "preset-blurb" }, p.blurb))))))),
         !isEmpty && (React.createElement("div", { className: "prog-playback" },
-            React.createElement("button", { className: `prog-play ${isPlaying ? "stopping" : ""}`, onClick: onPlayAll }, isPlaying ? "◼ Stop" : "▸ Play"),
+            React.createElement("button", { className: `prog-play ${isPlaying && playMode === "section" ? "stopping" : ""}`, onClick: () => onPlayAll("section") }, isPlaying && playMode === "section" ? "◼ Stop" : "▸ Section"),
+            React.createElement("button", { className: `prog-play alt ${isPlaying && playMode === "song" ? "stopping" : ""}`, onClick: () => onPlayAll("song"), title: "Play every section in order, honouring repeats" }, isPlaying && playMode === "song" ? "◼ Stop" : "▸▸ Song"),
             React.createElement("div", { className: "prog-tempo" },
                 React.createElement("span", { className: "prog-pb-label" }, "Tempo"),
                 React.createElement("input", { type: "range", min: "50", max: "200", value: bpm, onChange: (e) => setBpm(parseInt(e.target.value, 10)), className: "prog-tempo-slider" }),
@@ -1951,7 +1970,23 @@ function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove
                     bpm,
                     " BPM")),
             React.createElement("div", { className: "prog-pb-toggles" },
-                React.createElement("button", { className: `prog-pb-toggle ${loop ? "active" : ""}`, onClick: () => setLoop((v) => !v), title: "Repeat continuously" }, "\u21BB Loop")))),
+                React.createElement("button", { className: `prog-pb-toggle ${loop ? "active" : ""}`, onClick: () => setLoop((v) => !v), title: "Repeat continuously" }, "\u21BB Loop"),
+                React.createElement("label", { className: "prog-tone" },
+                    React.createElement("span", { className: "prog-pb-label" }, "Tone"),
+                    React.createElement("select", { value: tone, onChange: (e) => setTone(e.target.value), className: "prog-tone-select" }, Object.entries(tones).map(([id, t]) => (React.createElement("option", { key: id, value: id }, t.label)))))))),
+        !isEmpty && (React.createElement("div", { className: "prog-transpose" },
+            React.createElement("span", { className: "prog-pb-label" }, "Transpose"),
+            React.createElement("div", { className: "tr-steps" },
+                React.createElement("button", { className: "tr-btn", onClick: () => onTranspose(-12, transposeScope), title: "Down an octave" }, "\u221212"),
+                React.createElement("button", { className: "tr-btn", onClick: () => onTranspose(-1, transposeScope), title: "Down a semitone" }, "\u22121"),
+                React.createElement("button", { className: "tr-btn", onClick: () => onTranspose(1, transposeScope), title: "Up a semitone" }, "+1"),
+                React.createElement("button", { className: "tr-btn", onClick: () => onTranspose(12, transposeScope), title: "Up an octave" }, "+12")),
+            React.createElement("label", { className: "tr-key" },
+                React.createElement("span", { className: "prog-pb-label" }, "to key"),
+                React.createElement("select", { className: "prog-tone-select", value: songKeyIdx, onChange: (e) => onTransposeToKey(parseInt(e.target.value, 10)) }, NOTES.map((n, i) => React.createElement("option", { key: n, value: i }, n)))),
+            React.createElement("div", { className: "tr-scope", title: "Apply to just this section, or the whole song" },
+                React.createElement("button", { className: `tr-scope-btn ${transposeScope === "section" ? "active" : ""}`, onClick: () => setTransposeScope("section") }, "Section"),
+                React.createElement("button", { className: `tr-scope-btn ${transposeScope === "song" ? "active" : ""}`, onClick: () => setTransposeScope("song") }, "Song")))),
         isEmpty ? (React.createElement("div", { className: "prog-empty" },
             "Tap the ",
             React.createElement("span", { className: "prog-empty-plus" }, "+"),
@@ -1992,6 +2027,10 @@ function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove
                                 slot.settings.octave > 0 ? "+" : "",
                                 slot.settings.octave,
                                 " oct")))),
+                    React.createElement("div", { className: "prog-slot-beats", title: "How many beats this chord lasts" }, BEAT_CHOICES.map((b) => {
+                        var _a;
+                        return (React.createElement("button", { key: b, className: `prog-beat-btn ${((_a = slot.settings.beats) !== null && _a !== void 0 ? _a : 1) === b ? "active" : ""}`, onClick: () => onUpdateSlot(slot.id, { beats: b }), title: `${b} beat${b === 1 ? "" : "s"}` }, BEAT_LABEL[b]));
+                    })),
                     React.createElement("div", { className: "prog-slot-arp", title: "Arpeggio pattern" }, ARP_PATTERNS.map((p) => (React.createElement("button", { key: p, className: `prog-arp-btn ${(slot.settings.arp || "off") === p ? "active" : ""}`, onClick: () => onUpdateSlot(slot.id, { arp: p }), title: ARP_NAME[p] }, ARP_GLYPH[p])))),
                     React.createElement("div", { className: "prog-slot-arrows" },
                         React.createElement("button", { onClick: () => onMove(slot.id, -1), disabled: i === 0 }, "\u25C2"),
@@ -2426,8 +2465,13 @@ function buildMidiFile(progression, instrument, bpm) {
             arr.push(b);
     };
     const noteEvents = [];
-    progression.forEach((slot, idx) => {
-        const t0 = idx * perChord;
+    let cursor = 0;
+    progression.forEach((slot) => {
+        // Each chord lasts its own number of beats (½, 1, 2 or 4)
+        const beats = (slot.settings && slot.settings.beats) || 1;
+        const dur = Math.round(perChord * beats);
+        const t0 = cursor;
+        cursor += dur;
         const notes = chordToMidi(slot.chord, slot.settings, slot.custom, instrument);
         if (notes.length === 0)
             return;
@@ -2435,17 +2479,15 @@ function buildMidiFile(progression, instrument, bpm) {
         if (pattern === "off") {
             notes.forEach((n) => {
                 noteEvents.push({ tick: t0, on: true, note: n });
-                noteEvents.push({ tick: t0 + perChord, on: false, note: n });
+                noteEvents.push({ tick: t0 + dur, on: false, note: n });
             });
         }
         else {
             const order = arpOrder(notes, pattern);
-            const sub = perChord / order.length;
+            const sub = dur / order.length;
             order.forEach((n, i) => {
-                const on = Math.round(t0 + i * sub);
-                const off = Math.round(t0 + (i + 1) * sub);
-                noteEvents.push({ tick: on, on: true, note: n });
-                noteEvents.push({ tick: off, on: false, note: n });
+                noteEvents.push({ tick: Math.round(t0 + i * sub), on: true, note: n });
+                noteEvents.push({ tick: Math.round(t0 + (i + 1) * sub), on: false, note: n });
             });
         }
     });
@@ -2477,7 +2519,141 @@ function buildMidiFile(progression, instrument, bpm) {
     ];
     return new Uint8Array(bytes);
 }
-const DEFAULT_SETTING = { inversion: 0, octave: 0, voicingIdx: 0, qualityOverride: null, arp: "off" };
+// ─── Voicing conversion between instruments ──────────────────────────────────
+// Guitar strings sound E2..~E6 (midi 40..88 across 15 frets). Given a set of
+// MIDI notes (e.g. a piano voicing), find a fingering that keeps each note at
+// its original octave where the guitar can reach it. Returns null if fewer than
+// two notes are playable, so callers can fall back to a standard shape.
+function midiToGuitarFrets(midiNotes, maxFret = 17) {
+    let notes = [...new Set(midiNotes)].sort((a, b) => a - b);
+    if (notes.length < 2)
+        return null;
+    if (notes.length > 6)
+        notes = notes.slice(0, 6); // six strings, six notes
+    // Ascending notes must sit on ascending strings, so enumerate every choice of
+    // which strings carry them and keep the most compact, lowest-position result.
+    const pick = (k) => {
+        const out = [];
+        const rec = (start, cur) => {
+            if (cur.length === k) {
+                out.push([...cur]);
+                return;
+            }
+            for (let i = start; i < 6; i++) {
+                cur.push(i);
+                rec(i + 1, cur);
+                cur.pop();
+            }
+        };
+        rec(0, []);
+        return out;
+    };
+    let best = null;
+    for (const set of pick(notes.length)) {
+        const frets = [null, null, null, null, null, null];
+        let ok = true;
+        for (let i = 0; i < notes.length; i++) {
+            const f = notes[i] - OPEN_STRING_MIDI[set[i]];
+            if (f < 0 || f > maxFret) {
+                ok = false;
+                break;
+            }
+            frets[set[i]] = f;
+        }
+        if (!ok)
+            continue;
+        const pressed = frets.filter((f) => f !== null && f > 0);
+        const span = pressed.length > 1 ? Math.max(...pressed) - Math.min(...pressed) : 0;
+        if (span > 4)
+            continue; // beyond a comfortable hand stretch
+        const highest = Math.max(...frets.filter((f) => f !== null));
+        const score = span * 10 + highest; // compact first, then low on the neck
+        if (!best || score < best.score)
+            best = { frets, score };
+    }
+    return best ? best.frets : null;
+}
+// Convert a slot's stored voicing when the user switches instrument, keeping the
+// sounding octaves when the target instrument can produce them.
+function convertCustom(custom, chord, settings, fromInstrument, toInstrument) {
+    if (!custom)
+        return null;
+    if (fromInstrument === toInstrument)
+        return custom;
+    if (toInstrument === "piano") {
+        const midi = chordToMidi(chord, Object.assign(Object.assign({}, settings), { octave: 0 }), custom, "guitar");
+        return midi.length ? { midi } : null;
+    }
+    // piano → guitar: try to keep the same octaves
+    const midi = custom.midi && custom.midi.length
+        ? custom.midi
+        : chordToMidi(chord, Object.assign(Object.assign({}, settings), { octave: 0 }), custom, "piano");
+    const frets = midiToGuitarFrets(midi);
+    return frets ? { frets } : null;
+}
+// ─── Transposition ───────────────────────────────────────────────────────────
+// Move a chord by a number of semitones, rebuilding its name, its standard
+// shape and its stored voicing. Constructed (non-dictionary) chords are
+// re-named from their intervals so symbols like "C9(no5)" transpose correctly.
+function transposeChord(chord, semis) {
+    const newRoot = ((chord.rootIdx + semis) % 12 + 12) % 12;
+    const dictIntervals = CHORD_INTERVALS[chord.quality];
+    const intervals = chord.intervals || dictIntervals;
+    // Is this a plain dictionary chord, or a constructed one?
+    const isDict = !!dictIntervals && (!chord.intervals || (dictIntervals.length === chord.intervals.length &&
+        dictIntervals.every((iv, i) => ((iv % 12) + 12) % 12 === ((chord.intervals[i] % 12) + 12) % 12)));
+    let name;
+    if (isDict) {
+        name = chordName(newRoot, chord.quality);
+    }
+    else {
+        const pcs = intervals.map((iv) => ((newRoot + iv) % 12 + 12) % 12);
+        const d = describeChord(pcs, newRoot);
+        name = d ? d.name : chordName(newRoot, chord.quality);
+    }
+    return Object.assign(Object.assign({}, chord), { rootIdx: newRoot, name, intervals: chord.intervals ? [...chord.intervals] : undefined, shape: getChordShape(newRoot, chord.quality), voicings: getChordVoicings(newRoot, chord.quality, 0) });
+}
+// Move a stored voicing by the same interval. Guitar voicings are re-solved so
+// the result stays inside the playable range rather than sliding off the neck.
+function transposeCustom(custom, semis, instrument) {
+    if (!custom)
+        return null;
+    if (custom.midi && custom.midi.length) {
+        return Object.assign(Object.assign({}, custom), { midi: custom.midi.map((m) => m + semis) });
+    }
+    if (custom.frets && custom.frets.some((f) => f !== null)) {
+        const shifted = custom.frets.map((f) => (f === null ? null : f + semis));
+        const inRange = shifted.every((f) => f === null || (f >= 0 && f <= 17));
+        // A plain slide works when it stays on the neck; otherwise re-voice the
+        // same sounding notes somewhere playable.
+        if (inRange)
+            return Object.assign(Object.assign({}, custom), { frets: shifted, barre: null, capoFret: custom.capoFret || 0 });
+        const midi = custom.frets
+            .map((f, i) => (f === null ? null : OPEN_STRING_MIDI[i] + f + semis))
+            .filter((m) => m !== null);
+        const frets = midiToGuitarFrets(midi);
+        return frets ? { frets } : null;
+    }
+    return custom;
+}
+function transposeSlot(slot, semis, instrument) {
+    return Object.assign(Object.assign({}, slot), { chord: transposeChord(slot.chord, semis), custom: transposeCustom(slot.custom, semis, instrument) });
+}
+// ─── Sections ────────────────────────────────────────────────────────────────
+const SECTION_NAME_POOL = ["Intro", "Verse", "Chorus", "Bridge", "Solo", "Outro", "Pre-chorus", "Interlude"];
+let __sectionSeq = 0;
+function makeSection(name, slots = []) {
+    __sectionSeq += 1;
+    return {
+        id: `sec-${Date.now().toString(36)}-${__sectionSeq}`,
+        name: name || SECTION_NAME_POOL[0],
+        slots,
+        repeats: 1,
+    };
+}
+const DEFAULT_SETTING = { inversion: 0, octave: 0, voicingIdx: 0, qualityOverride: null, arp: "off", beats: 1 };
+const BEAT_CHOICES = [0.5, 1, 2, 4];
+const BEAT_LABEL = { 0.5: "\u00bd", 1: "1", 2: "2", 4: "4" };
 // Common chord progressions expressed as scale degrees (0 = I, 1 = ii ...).
 // They adapt to whatever key/mode is selected. Some override the chord quality
 // (e.g. blues uses dominant 7ths throughout, jazz ii–V–I uses 7ths).
@@ -2497,11 +2673,21 @@ function ChordModesApp() {
     const [instrument, setInstrument] = useState("guitar");
     const [capoMode, setCapoMode] = useState("off"); // "off" | "auto" | "1".."7"
     const [chordSettings, setChordSettings] = useState({});
-    const [progression, setProgression] = useState([]);
+    const [sections, setSections] = useState(() => [makeSection("Verse")]);
+    const [activeSecIdx, setActiveSecIdx] = useState(0);
+    const [guitarTone, setGuitarTone] = useState(DEFAULT_TONE.guitar);
+    const [pianoTone, setPianoTone] = useState(DEFAULT_TONE.piano);
+    const fileInputRef = useRef(null);
+    // The active section's slots, exposed under the old name so the rest of the
+    // component reads naturally.
+    const activeIdx = Math.min(activeSecIdx, Math.max(0, sections.length - 1));
+    const progression = (sections[activeIdx] && sections[activeIdx].slots) || [];
+    const setProgression = (updater) => setSections((prev) => prev.map((sec, i) => i !== activeIdx ? sec : Object.assign(Object.assign({}, sec), { slots: typeof updater === "function" ? updater(sec.slots) : updater })));
     const [playingProgIdx, setPlayingProgIdx] = useState(-1);
     const [bpm, setBpm] = useState(96);
     const [loop, setLoop] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [playMode, setPlayMode] = useState("section");
     const playbackTimers = useRef([]);
     const playingRef = useRef(false);
     const loopRef = useRef(false);
@@ -2533,7 +2719,7 @@ function ChordModesApp() {
             const order = arpOrder(notes, pattern);
             const step = arpMs ? Math.min(150, Math.max(55, arpMs / order.length)) : 130;
             order.forEach((midi, i) => {
-                const t = setTimeout(() => playSingleNote(midi, instrument), i * step);
+                const t = setTimeout(() => playSingleNote(midi, instrument, activeTone, step / 1000), i * step);
                 playbackTimers.current.push(t);
             });
             return;
@@ -2541,14 +2727,14 @@ function ChordModesApp() {
         // Block: quick strum (guitar) or near-simultaneous synth (piano)
         if (custom) {
             if (instrument === "guitar" && custom.frets && custom.frets.some((f) => f !== null)) {
-                playGuitarStrum(custom.frets, octave, 0.022);
+                playGuitarStrum(custom.frets, octave, 0.022, activeTone, arpMs ? arpMs / 1000 : undefined);
                 return;
             }
             if (custom.midi && custom.midi.length > 0) {
                 const sorted = [...custom.midi].sort((a, b) => a - b);
                 const baseMidi = sorted[0] + 12 * octave;
                 const intervals = sorted.map((m) => m - sorted[0]);
-                synthChord(intervals, baseMidi, instrument);
+                synthChord(intervals, baseMidi, instrument, undefined, activeTone, arpMs ? arpMs / 1000 : undefined);
                 return;
             }
         }
@@ -2565,11 +2751,11 @@ function ChordModesApp() {
                 shape = voicings[voicingIdx] || voicings[0] || chord.shape;
             }
             if (shape && shape.frets.some((f) => f !== null)) {
-                playGuitarStrum(shape.frets, octave, 0.022);
+                playGuitarStrum(shape.frets, octave, 0.022, activeTone, arpMs ? arpMs / 1000 : undefined);
                 return;
             }
         }
-        synthChord(inverted, baseMidi, instrument);
+        synthChord(inverted, baseMidi, instrument, undefined, activeTone, arpMs ? arpMs / 1000 : undefined);
     };
     const playSequence = () => {
         chords.forEach((c, i) => {
@@ -2619,15 +2805,169 @@ function ChordModesApp() {
     // Replace a slot's chord entirely (used when editing a slot in the finder)
     const replaceSlotChord = (id, chord, settings, custom) => setProgression((prev) => prev.map((s) => (s.id === id
         ? Object.assign(Object.assign({}, s), { chord: Object.assign({}, chord), settings: Object.assign(Object.assign({}, s.settings), settings), custom }) : s)));
-    const exportMidi = () => {
-        if (progression.length === 0)
+    // ─── Section management ────────────────────────────────────────────────────
+    const activeTone = instrument === "guitar" ? guitarTone : pianoTone;
+    const setActiveTone = instrument === "guitar" ? setGuitarTone : setPianoTone;
+    const addSection = () => {
+        const used = new Set(sections.map((x) => x.name));
+        const name = SECTION_NAME_POOL.find((n) => !used.has(n)) || `Section ${sections.length + 1}`;
+        stopProgression();
+        setSections((prev) => [...prev, makeSection(name)]);
+        setActiveSecIdx(sections.length);
+    };
+    const removeSection = (idx) => {
+        if (sections.length <= 1)
             return;
-        const bytes = buildMidiFile(progression, instrument, bpm);
+        stopProgression();
+        setSections((prev) => prev.filter((_, i) => i !== idx));
+        setActiveSecIdx((cur) => Math.max(0, cur >= idx ? cur - 1 : cur));
+    };
+    const renameSection = (idx, name) => setSections((prev) => prev.map((sec, i) => (i === idx ? Object.assign(Object.assign({}, sec), { name }) : sec)));
+    const setSectionRepeats = (idx, repeats) => setSections((prev) => prev.map((sec, i) => (i === idx ? Object.assign(Object.assign({}, sec), { repeats: Math.max(1, Math.min(16, repeats)) }) : sec)));
+    const moveSection = (idx, dir) => {
+        const j = idx + dir;
+        if (j < 0 || j >= sections.length)
+            return;
+        stopProgression();
+        setSections((prev) => { const n = [...prev]; [n[idx], n[j]] = [n[j], n[idx]]; return n; });
+        setActiveSecIdx(j);
+    };
+    // Keep sounding octaves when the instrument changes, where the target can play them
+    const prevInstrument = useRef(instrument);
+    useEffect(() => {
+        const from = prevInstrument.current;
+        if (from === instrument)
+            return;
+        prevInstrument.current = instrument;
+        setSections((prev) => prev.map((sec) => (Object.assign(Object.assign({}, sec), { slots: sec.slots.map((slot) => (Object.assign(Object.assign({}, slot), { custom: convertCustom(slot.custom, slot.chord, slot.settings, from, instrument) }))) }))));
+    }, [instrument]);
+    // ─── Transposition ─────────────────────────────────────────────────────────
+    // scope "song" moves every section and the app's key; "section" moves only
+    // the section being edited and leaves the key alone.
+    const transpose = (semis, scope = "song") => {
+        if (!semis)
+            return;
+        stopProgression();
+        setSections((prev) => prev.map((sec, i) => ((scope === "song" || i === activeIdx)
+            ? Object.assign(Object.assign({}, sec), { slots: sec.slots.map((sl) => transposeSlot(sl, semis, instrument)) }) : sec)));
+        if (scope === "song")
+            setRootIdx((r) => ((r + semis) % 12 + 12) % 12);
+    };
+    // Transpose so the current key becomes the chosen one (shortest path)
+    const transposeToKey = (targetRootIdx) => {
+        let semis = ((targetRootIdx - rootIdx) % 12 + 12) % 12;
+        if (semis > 6)
+            semis -= 12; // prefer the smaller move, up or down
+        transpose(semis, "song");
+    };
+    // ─── Save / load ───────────────────────────────────────────────────────────
+    const saveProject = () => {
+        const data = {
+            format: "modal-chords", version: 1, savedAt: new Date().toISOString(),
+            rootIdx, modeName, chordType, instrument, capoMode, bpm, loop,
+            guitarTone, pianoTone,
+            sections: sections.map((sec) => ({
+                name: sec.name, repeats: sec.repeats,
+                slots: sec.slots.map((sl) => ({
+                    chord: {
+                        rootIdx: sl.chord.rootIdx, quality: sl.chord.quality,
+                        name: sl.chord.name, degree: sl.chord.degree || "",
+                        intervals: sl.chord.intervals || null,
+                    },
+                    settings: Object.assign({}, sl.settings),
+                    custom: sl.custom || null,
+                })),
+            })),
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${NOTES[rootIdx].replace("\u266f", "sharp")}-${modeName}-progression.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+    };
+    const loadProject = (file) => {
+        if (!file)
+            return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const data = JSON.parse(String(reader.result));
+                if (!data || data.format !== "modal-chords" || !Array.isArray(data.sections)) {
+                    alert("That doesn't look like a Modal Chords file.");
+                    return;
+                }
+                stopProgression();
+                if (typeof data.rootIdx === "number")
+                    setRootIdx(data.rootIdx);
+                if (data.modeName && MODES[data.modeName])
+                    setModeName(data.modeName);
+                if (data.chordType)
+                    setChordType(data.chordType);
+                if (data.instrument) {
+                    setInstrument(data.instrument);
+                    prevInstrument.current = data.instrument;
+                }
+                if (data.capoMode)
+                    setCapoMode(data.capoMode);
+                if (typeof data.bpm === "number")
+                    setBpm(data.bpm);
+                if (typeof data.loop === "boolean")
+                    setLoop(data.loop);
+                if (data.guitarTone && GUITAR_TONES[data.guitarTone])
+                    setGuitarTone(data.guitarTone);
+                if (data.pianoTone && PIANO_TONES[data.pianoTone])
+                    setPianoTone(data.pianoTone);
+                const restored = data.sections.map((sec) => {
+                    const s2 = makeSection(sec.name || "Section", []);
+                    s2.repeats = Math.max(1, Math.min(16, sec.repeats || 1));
+                    s2.slots = (sec.slots || []).map((sl, i) => {
+                        const q = sl.chord && sl.chord.quality;
+                        const ch = {
+                            rootIdx: sl.chord.rootIdx, quality: q,
+                            name: sl.chord.name || chordName(sl.chord.rootIdx, q),
+                            degree: sl.chord.degree || "",
+                            intervals: sl.chord.intervals || CHORD_INTERVALS[q],
+                            shape: getChordShape(sl.chord.rootIdx, q),
+                            voicings: getChordVoicings(sl.chord.rootIdx, q, 0),
+                        };
+                        return {
+                            id: `slot-${Date.now().toString(36)}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+                            chord: ch,
+                            settings: Object.assign(Object.assign({}, DEFAULT_SETTING), (sl.settings || {})),
+                            custom: sl.custom || null,
+                        };
+                    });
+                    return s2;
+                });
+                setSections(restored.length ? restored : [makeSection("Verse")]);
+                setActiveSecIdx(0);
+            }
+            catch (err) {
+                alert("Couldn't read that file: " + (err && err.message ? err.message : err));
+            }
+        };
+        reader.readAsText(file);
+    };
+    const exportMidi = (mode = "song") => {
+        const secs = mode === "song" ? sections : [sections[activeIdx]].filter(Boolean);
+        const flat = [];
+        secs.forEach((sec) => {
+            const reps = mode === "song" ? Math.max(1, sec.repeats || 1) : 1;
+            for (let r = 0; r < reps; r++)
+                flat.push(...sec.slots);
+        });
+        if (flat.length === 0)
+            return;
+        const bytes = buildMidiFile(flat, instrument, bpm);
         const blob = new Blob([bytes], { type: "audio/midi" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `modal-chords-progression.mid`;
+        a.download = mode === "song" ? "modal-chords-song.mid" : "modal-chords-section.mid";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -2657,33 +2997,57 @@ function ChordModesApp() {
         setIsPlaying(false);
         setPlayingProgIdx(-1);
     };
-    const playProgression = () => {
-        // Toggle: if already playing, stop
+    // Build the flat playback timeline. "section" mode plays just the active
+    // section; "song" mode plays every section in order, each repeated its own
+    // number of times.
+    const buildTimeline = (mode) => {
+        const beatMs = 60000 / bpm;
+        const secs = mode === "song" ? sections : [sections[activeIdx]].filter(Boolean);
+        const events = [];
+        let t = 0;
+        secs.forEach((sec, secIdx) => {
+            const realIdx = mode === "song" ? secIdx : activeIdx;
+            const reps = mode === "song" ? Math.max(1, sec.repeats || 1) : 1;
+            for (let r = 0; r < reps; r++) {
+                sec.slots.forEach((slot, i) => {
+                    var _a, _b;
+                    const beats = (_b = (_a = slot.settings) === null || _a === void 0 ? void 0 : _a.beats) !== null && _b !== void 0 ? _b : 1;
+                    events.push({ at: t, dur: beats * beatMs, slot, slotIdx: i, secIdx: realIdx });
+                    t += beats * beatMs;
+                });
+            }
+        });
+        return { events, total: t };
+    };
+    const playProgression = (mode = "section") => {
         if (playingRef.current) {
             stopProgression();
             return;
         }
-        if (progression.length === 0)
+        const { events, total } = buildTimeline(mode);
+        if (events.length === 0)
             return;
         playbackTimers.current.forEach((t) => clearTimeout(t));
         playbackTimers.current = [];
         playingRef.current = true;
         loopRef.current = loop;
         setIsPlaying(true);
-        const msPerChord = Math.round(60000 / bpm);
+        setPlayMode(mode);
         const runCycle = () => {
             if (!playingRef.current)
                 return;
-            progression.forEach((slot, i) => {
+            events.forEach((ev) => {
                 const t = setTimeout(() => {
-                    setPlayingProgIdx(i);
-                    playChord(slot.chord, slot.settings, slot.custom, msPerChord);
-                }, i * msPerChord);
+                    setPlayingProgIdx(ev.slotIdx);
+                    if (mode === "song" && ev.secIdx !== activeIdx)
+                        setActiveSecIdx(ev.secIdx);
+                    playChord(ev.slot.chord, ev.slot.settings, ev.slot.custom, ev.dur);
+                }, ev.at);
                 playbackTimers.current.push(t);
             });
             const endT = setTimeout(() => {
                 if (loopRef.current && playingRef.current) {
-                    playbackTimers.current = []; // previous cycle's timers have fired
+                    playbackTimers.current = [];
                     runCycle();
                 }
                 else {
@@ -2691,7 +3055,7 @@ function ChordModesApp() {
                     setIsPlaying(false);
                     setPlayingProgIdx(-1);
                 }
-            }, progression.length * msPerChord);
+            }, total);
             playbackTimers.current.push(endT);
         };
         runCycle();
@@ -2717,8 +3081,8 @@ function ChordModesApp() {
         setProgression(slots);
         setPlayingProgIdx(-1);
     };
-    const finderPlayNote = (midi) => playSingleNote(midi, instrument);
-    const finderPlayChord = (intervals, baseMidi) => synthChord(intervals, baseMidi, instrument);
+    const finderPlayNote = (midi) => playSingleNote(midi, instrument, activeTone);
+    const finderPlayChord = (intervals, baseMidi) => synthChord(intervals, baseMidi, instrument, undefined, activeTone);
     const animKey = `${rootIdx}-${modeName}-${chordType}-${instrument}`;
     return (React.createElement("div", { className: "app-root" },
         React.createElement("style", null, styles),
@@ -2730,7 +3094,8 @@ function ChordModesApp() {
                     React.createElement("div", { className: "brand-title" }, "Modal Chords"),
                     React.createElement("div", { className: "brand-sub" }, "Seven modes \u00B7 twelve roots \u00B7 the diatonic family"))),
             React.createElement("button", { className: "play-all", onClick: playSequence }, "\u25B8 Play scale")),
-        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi, onEditSlot: (slot) => sendToFinder(slot.chord, slot.settings, slot.custom, slot.id, slot.chord.name) }),
+        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi, onEditSlot: (slot) => sendToFinder(slot.chord, slot.settings, slot.custom, slot.id, slot.chord.name), playMode: playMode, sections: sections, activeIdx: activeIdx, onSelectSection: (i) => { stopProgression(); setActiveSecIdx(i); }, onAddSection: addSection, onRemoveSection: removeSection, onRenameSection: renameSection, onSetRepeats: setSectionRepeats, onMoveSection: moveSection, onSave: saveProject, onLoad: () => fileInputRef.current && fileInputRef.current.click(), tones: instrument === "guitar" ? GUITAR_TONES : PIANO_TONES, tone: activeTone, setTone: setActiveTone, onTranspose: transpose, onTransposeToKey: transposeToKey, songKeyIdx: rootIdx }),
+        React.createElement("input", { ref: fileInputRef, type: "file", accept: "application/json,.json", style: { display: "none" }, onChange: (e) => { loadProject(e.target.files && e.target.files[0]); e.target.value = ""; } }),
         React.createElement("section", { className: "controls" },
             React.createElement("div", { className: "control-row" },
                 React.createElement("div", { className: "control-block" },
@@ -2910,6 +3275,110 @@ const styles = `
 .prog-play:disabled { opacity: 0.35; cursor: not-allowed; }
 .prog-play.stopping { background: var(--copper); border-color: var(--copper); }
 .prog-play.stopping:hover:not(:disabled) { background: var(--copper); border-color: var(--copper); filter: brightness(1.12); }
+
+/* Transpose row */
+.prog-transpose {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 12px; padding: 9px 14px;
+  background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 10px;
+}
+.tr-steps { display: flex; gap: 4px; }
+.tr-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+  background: transparent; color: var(--ink-3); border: 1px solid var(--line-soft);
+  padding: 5px 11px; border-radius: 999px; cursor: pointer; transition: all 0.16s ease;
+  min-width: 40px;
+}
+.tr-btn:hover { color: var(--copper); border-color: rgba(201,122,90,0.5); background: rgba(201,122,90,0.08); }
+.tr-key { display: flex; align-items: center; gap: 6px; }
+.tr-scope {
+  display: inline-flex; gap: 2px; margin-left: auto;
+  background: var(--surface-3); border: 1px solid var(--line-soft);
+  border-radius: 999px; padding: 2px;
+}
+.tr-scope-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em;
+  background: transparent; color: var(--ink-3); border: none;
+  padding: 4px 10px; border-radius: 999px; cursor: pointer; transition: all 0.16s ease;
+}
+.tr-scope-btn:hover { color: var(--ink-2); }
+.tr-scope-btn.active { background: var(--copper); color: var(--bg); font-weight: 600; }
+
+/* Section tabs */
+.sec-bar { margin-bottom: 12px; }
+.sec-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sec-tab {
+  display: flex; align-items: stretch; border: 1px solid var(--line-soft);
+  border-radius: 8px; overflow: hidden; background: var(--surface-3);
+  transition: all 0.16s ease;
+}
+.sec-tab.active { border-color: var(--gold); background: rgba(212, 169, 106, 0.1); }
+.sec-tab-main {
+  display: flex; align-items: center; gap: 7px; background: transparent;
+  border: none; padding: 6px 10px; cursor: pointer; color: var(--ink-3);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.04em;
+}
+.sec-tab.active .sec-tab-main { color: var(--ink); }
+.sec-tab-name { font-weight: 600; }
+.sec-tab-count {
+  font-size: 9px; color: var(--ink-3); background: var(--bg);
+  border-radius: 999px; padding: 1px 6px;
+}
+.sec-tab-rep {
+  display: flex; align-items: center; gap: 2px; padding: 0 6px 0 4px;
+  border-left: 1px solid var(--line-soft);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-3);
+}
+.sec-tab-rep button {
+  background: transparent; border: none; color: var(--ink-3); cursor: pointer;
+  font-size: 12px; line-height: 1; padding: 2px 3px;
+}
+.sec-tab-rep button:hover:not(:disabled) { color: var(--gold); }
+.sec-tab-rep button:disabled { opacity: 0.25; cursor: not-allowed; }
+.sec-add {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+  background: transparent; color: var(--ink-3); border: 1px dashed var(--line);
+  padding: 7px 12px; border-radius: 8px; cursor: pointer; transition: all 0.16s ease;
+}
+.sec-add:hover { color: var(--gold); border-color: rgba(212,169,106,0.5); }
+.sec-edit { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.sec-name-input {
+  flex: 0 1 190px; background: var(--bg); border: 1px solid var(--line-soft);
+  color: var(--ink); border-radius: 7px; padding: 5px 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.04em;
+}
+.sec-name-input:focus { outline: none; border-color: var(--gold); }
+.sec-mini {
+  background: transparent; border: 1px solid var(--line-soft); color: var(--ink-3);
+  border-radius: 6px; padding: 4px 9px; cursor: pointer; font-size: 11px; line-height: 1;
+  transition: all 0.16s ease;
+}
+.sec-mini:hover:not(:disabled) { color: var(--ink); border-color: var(--line); }
+.sec-mini:disabled { opacity: 0.3; cursor: not-allowed; }
+.sec-mini.danger:hover:not(:disabled) { color: var(--copper); border-color: var(--copper); }
+
+/* Per-slot beat length */
+.prog-slot-beats { display: flex; gap: 3px; margin-top: 8px; }
+.prog-beat-btn {
+  flex: 1; min-width: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  line-height: 1; color: var(--ink-3); background: var(--surface-3);
+  border: 1px solid var(--line-soft); border-radius: 5px; padding: 4px 0;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.prog-beat-btn:hover { color: var(--ink-2); border-color: var(--line); }
+.prog-beat-btn.active { background: var(--copper); color: var(--bg); border-color: var(--copper); }
+
+/* Tone selector */
+.prog-tone { display: flex; align-items: center; gap: 6px; }
+.prog-tone-select {
+  background: var(--bg); color: var(--ink-2); border: 1px solid var(--line-soft);
+  border-radius: 999px; padding: 5px 9px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em;
+}
+.prog-tone-select:focus { outline: none; border-color: var(--gold); }
+.prog-play.alt { background: transparent; color: var(--gold); border-color: rgba(212,169,106,0.5); }
+.prog-play.alt:hover:not(:disabled) { background: rgba(212,169,106,0.1); }
+.prog-play.alt.stopping { background: var(--copper); color: var(--bg); border-color: var(--copper); }
 
 /* Preset progressions */
 .prog-presets {
@@ -3532,6 +4001,8 @@ const styles = `
   .prog-playback { gap: 10px; }
   .prog-playback .prog-play { flex: 1 1 100%; }
   .prog-tempo { min-width: 100%; }
+  .tr-scope { margin-left: 0; }
+  .prog-transpose { gap: 10px; }
   .scale-map-section { padding: 14px; }
   .scale-map-chord-bar { gap: 6px; }
   .scale-map-label-toggle { margin-left: 0; }
