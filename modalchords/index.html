@@ -19077,7 +19077,7 @@ function ScaleFinder({ instrument, palette, onSelectScale, onPlayNote }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Progression bar
 // ─────────────────────────────────────────────────────────────────────────────
-function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, playMode, presets, onApplyPreset, onUpdateSlot, onExport, onEditSlot, sections, activeIdx, onSelectSection, onAddSection, onRemoveSection, onRenameSection, onSetRepeats, onMoveSection, onSave, onLoad, tones, tone, setTone, onTranspose, onTransposeToKey, songKeyIdx }) {
+function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove, onMove, onClear, palette, instrument, bpm, setBpm, loop, setLoop, isPlaying, playMode, presets, onApplyPreset, onUpdateSlot, onExport, onEditSlot, sections, activeIdx, onSelectSection, onAddSection, onRemoveSection, onRenameSection, onSetRepeats, onMoveSection, onSave, onLoad, onTranspose, onTransposeToKey, songKeyIdx }) {
     const isEmpty = progression.length === 0;
     const [showFingerings, setShowFingerings] = useState(true);
     const [showPresets, setShowPresets] = useState(false);
@@ -19131,10 +19131,7 @@ function ProgressionBar({ progression, playingIndex, onPlay, onPlayAll, onRemove
                     bpm,
                     " BPM")),
             React.createElement("div", { className: "prog-pb-toggles" },
-                React.createElement("button", { className: `prog-pb-toggle ${loop ? "active" : ""}`, onClick: () => setLoop((v) => !v), title: "Repeat continuously" }, "\u21BB Loop"),
-                React.createElement("label", { className: "prog-tone" },
-                    React.createElement("span", { className: "prog-pb-label" }, "Tone"),
-                    React.createElement("select", { value: tone, onChange: (e) => setTone(e.target.value), className: "prog-tone-select" }, Object.entries(tones).map(([id, t]) => (React.createElement("option", { key: id, value: id }, t.label)))))))),
+                React.createElement("button", { className: `prog-pb-toggle ${loop ? "active" : ""}`, onClick: () => setLoop((v) => !v), title: "Repeat continuously" }, "\u21BB Loop")))),
         !isEmpty && (React.createElement("div", { className: "prog-transpose" },
             React.createElement("span", { className: "prog-pb-label" }, "Transpose"),
             React.createElement("div", { className: "tr-steps" },
@@ -20255,7 +20252,7 @@ function ChordModesApp() {
                     React.createElement("div", { className: "brand-title" }, "Modal Chords"),
                     React.createElement("div", { className: "brand-sub" }, "Seven modes \u00B7 twelve roots \u00B7 the diatonic family"))),
             React.createElement("button", { className: "play-all", onClick: playSequence }, "\u25B8 Play scale")),
-        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi, onEditSlot: (slot) => sendToFinder(slot.chord, slot.settings, slot.custom, slot.id, slot.chord.name), playMode: playMode, sections: sections, activeIdx: activeIdx, onSelectSection: (i) => { stopProgression(); setActiveSecIdx(i); }, onAddSection: addSection, onRemoveSection: removeSection, onRenameSection: renameSection, onSetRepeats: setSectionRepeats, onMoveSection: moveSection, onSave: saveProject, onLoad: () => fileInputRef.current && fileInputRef.current.click(), tones: instrument === "guitar" ? GUITAR_TONES : PIANO_TONES, tone: activeTone, setTone: setActiveTone, onTranspose: transpose, onTransposeToKey: transposeToKey, songKeyIdx: rootIdx }),
+        React.createElement(ProgressionBar, { progression: progression, playingIndex: playingProgIdx, onPlay: playProgressionSlot, onPlayAll: playProgression, onRemove: removeFromProgression, onMove: moveInProgression, onClear: clearProgression, palette: palette, instrument: instrument, bpm: bpm, setBpm: setBpm, loop: loop, setLoop: setLoop, isPlaying: isPlaying, presets: PROGRESSION_PRESETS, onApplyPreset: applyPreset, onUpdateSlot: updateSlotSettings, onExport: exportMidi, onEditSlot: (slot) => sendToFinder(slot.chord, slot.settings, slot.custom, slot.id, slot.chord.name), playMode: playMode, sections: sections, activeIdx: activeIdx, onSelectSection: (i) => { stopProgression(); setActiveSecIdx(i); }, onAddSection: addSection, onRemoveSection: removeSection, onRenameSection: renameSection, onSetRepeats: setSectionRepeats, onMoveSection: moveSection, onSave: saveProject, onLoad: () => fileInputRef.current && fileInputRef.current.click(), onTranspose: transpose, onTransposeToKey: transposeToKey, songKeyIdx: rootIdx }),
         React.createElement("input", { ref: fileInputRef, type: "file", accept: "application/json,.json", style: { display: "none" }, onChange: (e) => { loadProject(e.target.files && e.target.files[0]); e.target.value = ""; } }),
         React.createElement("section", { className: "controls" },
             React.createElement("div", { className: "control-row" },
@@ -20264,6 +20261,10 @@ function ChordModesApp() {
                     React.createElement("div", { className: "type-toggle" },
                         React.createElement("button", { className: `type-pill ${instrument === "guitar" ? "active" : ""}`, onClick: () => setInstrument("guitar") }, "Guitar"),
                         React.createElement("button", { className: `type-pill ${instrument === "piano" ? "active" : ""}`, onClick: () => setInstrument("piano") }, "Piano"))),
+                React.createElement("div", { className: "control-block" },
+                    React.createElement("label", { className: "control-label" }, "Tone"),
+                    React.createElement("div", { className: "tone-grid" }, Object.entries(instrument === "guitar" ? GUITAR_TONES : PIANO_TONES).map(([id, t]) => (React.createElement("button", { key: id, className: `tone-pill ${activeTone === id ? "active" : ""}`, onClick: () => setActiveTone(id) }, t.label)))),
+                    React.createElement("span", { className: "control-hint" }, "applies to every sound in the app")),
                 React.createElement("div", { className: "control-block voicing-block" },
                     React.createElement("label", { className: "control-label" }, "Voicing"),
                     React.createElement("div", { className: "voicing-grid" },
@@ -20436,6 +20437,16 @@ const styles = `
 .prog-play:disabled { opacity: 0.35; cursor: not-allowed; }
 .prog-play.stopping { background: var(--copper); border-color: var(--copper); }
 .prog-play.stopping:hover:not(:disabled) { background: var(--copper); border-color: var(--copper); filter: brightness(1.12); }
+
+.tone-grid { display: flex; flex-wrap: wrap; gap: 4px; background: var(--bg); border: 1px solid var(--line-soft); border-radius: 999px; padding: 3px; }
+.tone-pill {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px; letter-spacing: 0.04em;
+  background: transparent; color: var(--ink-3); border: none;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all 0.18s ease;
+}
+.tone-pill:hover { color: var(--ink-2); }
+.tone-pill.active { background: var(--copper); color: var(--bg); font-weight: 600; }
 
 /* Transpose row */
 .prog-transpose {
