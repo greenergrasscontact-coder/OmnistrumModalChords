@@ -17915,49 +17915,154 @@ const OPEN_OVERRIDES = {
     "10-aug": { frets: [null, 1, 0, 3, 3, 2] },
     "11-aug": { frets: [null, 2, 1, 0, 0, 3] },
 };
-// Movable barre-shape offsets, relative to the root fret on string 6 (E shape)
-// or string 5 (A shape). Shared by getChordShape and getChordVoicings so both
-// always agree. Extended chords (9ths, 11ths, 13ths) commonly omit the 5th —
-// and the dominant 11 omits the 3rd — which is standard practice, not an error.
+// Movable shape offsets, relative to the root fret on string 6 (E shape) or
+// string 5 (A shape). Every shape here was generated and verified against
+// physical constraints: offsets stay within a 4-fret hand span, the root is
+// always the lowest fret (so any barre sits AT the root fret, never mid-shape),
+// no more than four fingers are required, and no string is muted underneath a
+// barre. Shared by getChordShape and getChordVoicings so both always agree.
 const E_SHAPE_OFFSETS = {
-    maj: [0, 2, 2, 1, 0, 0], min: [0, 2, 2, 0, 0, 0],
-    maj7: [0, 2, 1, 1, 0, 0], min7: [0, 2, 0, 0, 0, 0], dom7: [0, 2, 0, 1, 0, 0],
-    sus2: [0, 2, 2, -1, 0, 0], sus4: [0, 2, 2, 2, 0, 0],
-    "6": [0, 2, 2, 1, 2, 0], add9: [0, 2, 2, 1, 0, 2],
-    // Extended, root on string 6
-    maj9: [0, -1, 1, -1, null, null],
-    min9: [0, -2, 0, -1, null, null],
-    "9": [0, -1, 0, -1, null, null],
-    "13": [0, -1, 0, -1, 2, null],
-    min13: [0, -2, 0, -1, 2, null],
+    "5": [0, 2, 2, 4, 0, 0],
+    "6": [0, 4, 2, 1, 0, 0],
+    "9": [0, 2, 0, 1, 0, 2],
+    "11": [0, 0, 0, 2, 0, 2],
+    "13": [0, 4, 0, 1, 0, 2],
+    "maj": [0, 2, 2, 1, 0, 0],
+    "min": [0, 2, 2, 0, 0, 0],
+    "dim": [0, 1, 2, 0, null, null],
+    "aug": [0, 3, 2, 1, null, null],
+    "sus2": [0, 2, 4, 4, 0, 0],
+    "sus4": [0, 0, 2, 2, 0, 0],
+    "maj7no5": [0, null, 1, 1, null, null],
+    "7no5": [0, null, 0, 1, null, null],
+    "m7no5": [0, null, 0, 0, null, null],
+    "maj7": [0, 2, 1, 1, 0, 0],
+    "min7": [0, 2, 0, 0, 0, 0],
+    "dom7": [0, 2, 0, 1, 0, 0],
+    "m7b5": [0, 1, 0, 0, 3, 0],
+    "dim7": [0, 1, 2, 0, 2, 0],
+    "mMaj7": [0, 2, 1, 0, 0, 0],
+    "aug7": [0, 3, 0, 1, 1, 0],
+    "augMaj7": [0, null, 1, 1, 1, null],
+    "7b5": [0, 1, 0, 1, 3, 0],
+    "7sus4": [0, 0, 0, 2, 0, 0],
+    "7sus2": [0, 2, 0, 4, 0, 2],
+    "m6": [0, 2, 2, 0, 2, 0],
+    "add9": [0, 2, 4, 1, 0, 0],
+    "madd9": [0, 2, 2, 0, 0, 2],
+    "maj9": [0, null, 1, 1, null, 2],
+    "min9": [0, 2, 0, 0, 0, 2],
+    "6/9": [0, 4, 4, 1, 0, 0],
+    "mMaj9": [0, 2, 1, 0, 0, 2],
+    "min11": [0, 0, 0, 0, 0, 2],
+    "maj11": [0, 0, 1, 1, 0, 2],
+    "maj7#11": [0, 1, 1, 1, 0, 0],
+    "7#11": [0, 1, 0, 1, 0, 0],
+    "add11": [0, 0, 2, 1, 0, 0],
+    "min13": [0, 2, 0, 0, 2, 2],
+    "maj13": [0, 4, 1, 1, 0, 0],
+    "13b9": [0, 4, 0, 1, 0, 1],
+    "7b13": [0, 2, 0, 1, 1, 0],
+    "7b9": [0, 2, 0, 1, 0, 1],
+    "7#9": [0, 2, 0, 1, 0, 3],
+    "maj7no3": [0, 2, 1, 4, 0, 0],
+    "7no3": [0, 2, 0, 4, 0, 0],
 };
 const A_SHAPE_OFFSETS = {
-    maj: [null, 0, 2, 2, 2, 0], min: [null, 0, 2, 2, 1, 0],
-    maj7: [null, 0, 2, 1, 2, 0], min7: [null, 0, 2, 0, 1, 0], dom7: [null, 0, 2, 0, 2, 0],
-    sus2: [null, 0, 2, 2, 0, 0], sus4: [null, 0, 2, 2, 3, 0],
-    "6": [null, 0, 2, 2, 2, 2], m6: [null, 0, 2, 2, 1, 2],
-    add9: [null, 0, 2, 4, 0, 0], "7sus4": [null, 0, 2, 0, 3, 0],
-    "7sus2": [null, 0, 2, 0, 0, 0],
-    // Extended, root on string 5
-    maj9: [null, 0, -1, 1, 0, null],
-    min9: [null, 0, -2, 0, 0, 0],
-    "9": [null, 0, -1, 0, 0, null],
-    "6/9": [null, 0, -1, -1, 0, 0],
-    mMaj9: [null, 0, -2, 1, 0, null],
+    "5": [null, 0, 2, 2, null, null],
+    "6": [null, 0, 4, 2, 2, 0],
+    "9": [null, 0, null, 4, 2, 3],
     "11": [null, 0, 0, 0, 0, 0],
-    min11: [null, 0, 0, 0, 1, 0],
-    maj11: [null, 0, null, 1, 0, -2],
-    "7#11": [null, 0, -1, 0, null, -1],
-    "maj7#11": [null, 0, -1, 1, null, -1],
-    "13": [null, 0, -1, 0, 0, 2],
-    min13: [null, 0, -2, 0, 0, 2],
-    maj13: [null, 0, -1, 1, 0, 2],
-    "13b9": [null, 0, -1, 0, -1, 2],
-    "7b13": [null, 0, -1, 0, null, 1],
-    // add11 keeps the 3rd and the 11th a semitone apart, so they're split across
-    // octaves: R 3 5 R 11 (needs the root at fret 3 or higher)
-    add11: [null, 0, -1, -3, -2, -2],
+    "13": [null, 0, 2, 0, 2, 2],
+    "maj": [null, 0, 2, 2, 2, 0],
+    "min": [null, 0, 2, 2, 1, 0],
+    "dim": [null, 0, 1, 2, 1, null],
+    "aug": [null, 0, 3, 2, 2, null],
+    "sus2": [null, 0, 2, 2, 0, 0],
+    "sus4": [null, 0, 0, 2, 3, 0],
+    "maj7no5": [null, 0, null, 1, 2, null],
+    "7no5": [null, 0, null, 0, 2, null],
+    "m7no5": [null, 0, null, 0, 1, null],
+    "maj7": [null, 0, 2, 1, 2, 0],
+    "min7": [null, 0, 2, 0, 1, 0],
+    "dom7": [null, 0, 2, 0, 2, 0],
+    "m7b5": [null, 0, 1, 0, 1, null],
+    "dim7": [null, 0, 1, null, 1, 2],
+    "mMaj7": [null, 0, 2, 1, 1, 0],
+    "aug7": [null, 0, 3, 0, 2, 1],
+    "augMaj7": [null, 0, 3, 1, 2, null],
+    "7b5": [null, 0, 1, 0, 2, null],
+    "7sus4": [null, 0, 0, 0, null, null],
+    "7sus2": [null, 0, 2, 0, 0, 0],
+    "m6": [null, 0, 4, 2, 1, 0],
+    "add9": [null, 0, 2, 4, 2, 0],
+    "madd9": [null, 0, 2, 4, 1, 0],
+    "maj9": [null, 0, null, 4, 2, 4],
+    "min9": [null, 0, null, 4, 1, 3],
+    "6/9": [null, 0, 4, 4, 2, 0],
+    "mMaj9": [null, 0, null, 4, 1, 4],
+    "min11": [null, 0, 0, 4, 1, 3],
+    "maj11": [null, 0, 0, 4, 2, 4],
+    "maj7#11": [null, 0, 1, 1, 2, 0],
+    "7#11": [null, 0, 1, 0, 2, 0],
+    "add11": [null, 0, 0, 2, 2, 0],
+    "min13": [null, 0, 2, 0, 1, 2],
+    "maj13": [null, 0, 4, 1, 2, 0],
+    "7b13": [null, 0, 2, 0, 2, 1],
+    "7b9": [null, 0, null, 3, 2, 3],
+    "maj7no3": [null, 0, 2, 1, null, null],
+    "7no3": [null, 0, 2, 0, null, null],
 };
+// Work out the barre a movable shape actually needs. At fret N every sounding
+// string is fretted, so offset 0 IS the barre position. A barre is only real if
+// two or more sounding strings sit at offset 0 and nothing is muted underneath.
+function deriveShapeBarre(frets, rootFret) {
+    const sounding = frets.map((f, i) => ({ f, i })).filter((x) => x.f !== null);
+    if (sounding.length < 2)
+        return null;
+    const atRoot = sounding.filter((x) => x.f === rootFret).map((x) => x.i);
+    if (atRoot.length < 2)
+        return null;
+    const from = Math.min(...atRoot), to = Math.max(...atRoot);
+    for (let i = from; i <= to; i++)
+        if (frets[i] === null)
+            return null;
+    for (const x of sounding)
+        if (x.i >= from && x.i <= to && x.f < rootFret)
+            return null;
+    return { fret: rootFret, fromString: from, toString: to };
+}
+// Reject anything a hand can't actually form.
+function isPlayableVoicing(frets, barre) {
+    const sounding = frets.filter((f) => f !== null);
+    if (sounding.length < 2)
+        return false;
+    const fretted = frets.filter((f) => f !== null && f > 0);
+    if (fretted.length) {
+        if (Math.max(...fretted) - Math.min(...fretted) > 4)
+            return false;
+    }
+    if (barre) {
+        for (let i = barre.fromString; i <= barre.toString; i++) {
+            if (frets[i] === null)
+                return false; // can't mute under a barre
+            if (frets[i] < barre.fret)
+                return false; // can't fret below it
+        }
+        const covered = frets.filter((f, i) => f === barre.fret && i >= barre.fromString && i <= barre.toString).length;
+        if (covered < 2)
+            return false;
+        const extra = frets.filter((f, i) => f !== null && f > 0 &&
+            !(f === barre.fret && i >= barre.fromString && i <= barre.toString)).length;
+        if (1 + extra > 4)
+            return false;
+    }
+    else {
+        if (fretted.length > 4)
+            return false;
+    }
+    return true;
+}
 function getChordShape(rootIdx, quality) {
     var _a;
     const key = `${rootIdx}-${quality}`;
@@ -17979,7 +18084,7 @@ function getChordShape(rootIdx, quality) {
             const frets = offs.map((o) => o === null ? null : n + o);
             // Reject if any fret would be negative
             if (frets.every((f) => f === null || f >= 0)) {
-                return { frets, barre: isVariantQuality ? null : { fret: n, fromString: 0, toString: 5 } };
+                return { frets, barre: deriveShapeBarre(frets, n) };
             }
         }
         if (aShapeOffsets[quality]) {
@@ -17987,7 +18092,7 @@ function getChordShape(rootIdx, quality) {
             const offs = aShapeOffsets[quality];
             const frets = offs.map((o) => o === null ? null : n + o);
             if (frets.every((f) => f === null || f >= 0)) {
-                return { frets, barre: isVariantQuality ? null : { fret: n, fromString: 1, toString: 5 } };
+                return { frets, barre: deriveShapeBarre(frets, n) };
             }
         }
     }
@@ -18093,6 +18198,8 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         const key = v.frets.join(",");
         if (seen.has(key))
             return;
+        if (!isPlayableVoicing(v.frets, v.barre))
+            return; // drop anything a hand can't form
         seen.add(key);
         voicings.push(v);
     };
@@ -18111,7 +18218,7 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         const n = fret6 === 0 ? 12 : fret6;
         const frets = eOffs[quality].map((o) => o === null ? null : n + o);
         if (frets.every((f) => f === null || f >= 0)) {
-            push({ frets, barre: isVariant ? null : { fret: n, fromString: 0, toString: 5 }, shapeTag: "E shape" });
+            push({ frets, barre: deriveShapeBarre(frets, n), shapeTag: "E shape" });
         }
     }
     // 3. A-shape barre at A root fret (root on string 5)
@@ -18120,7 +18227,7 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         const n = fret5 === 0 ? 12 : fret5;
         const frets = aOffs[quality].map((o) => o === null ? null : n + o);
         if (frets.every((f) => f === null || f >= 0)) {
-            push({ frets, barre: isVariant ? null : { fret: n, fromString: 1, toString: 5 }, shapeTag: "A shape" });
+            push({ frets, barre: deriveShapeBarre(frets, n), shapeTag: "A shape" });
         }
     }
     // 4. D-shape on the top four strings (root on string 4 / D string).
