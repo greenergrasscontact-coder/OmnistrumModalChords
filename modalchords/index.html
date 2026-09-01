@@ -17929,6 +17929,165 @@ const OPEN_OVERRIDES = {
     "10-aug": { frets: [null, 1, 0, 3, 3, 2] },
     "11-aug": { frets: [null, 2, 1, 0, 0, 3] },
 };
+// ─── Curated shapes ──────────────────────────────────────────────────────────
+// Transcribed from chord charts and verified: correct chord tones, at most a
+// four-fret span, and at most four fingers — with the thumb allowed to fret the
+// LOW E string only (never any other string), which is how these are played.
+// Where a chord type appears here, these replace the generated shapes.
+const CURATED_SHAPES = {
+    "6": [
+        { label: "E shape", root: 0, offsets: [0, null, -1, 1, 0, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, -1, -2, null] },
+    ],
+    "9": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, -1, -3, null] },
+        { label: "E shape 2", root: 0, offsets: [0, 2, 0, 1, 0, 2] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 0, 0, null] },
+    ],
+    "11": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, -1, -2, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 0, -1, -2, -2] },
+        { label: "E shape 3", root: 0, offsets: [0, null, 0, -1, -2, 0], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, null, 0, 0, -2] },
+    ],
+    "13": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, -1, -3, -3] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 0, 1, 2, null] },
+        { label: "E shape 3", root: 0, offsets: [0, 2, 0, 1, 2, 0] },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 0, 2, 2] },
+    ],
+    "maj7": [
+        { label: "E shape", root: 0, offsets: [0, null, 1, 1, 0, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 1, 1, 0, -1], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 1, 2, 0] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -1, -3, -3, null] },
+    ],
+    "maj9": [
+        { label: "E shape", root: 0, offsets: [0, -1, 1, -1, null, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 1, 1, 0, 2], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 1, 0, null] },
+    ],
+    "add9": [
+        { label: "E shape", root: 0, offsets: [0, null, 2, 1, 0, 2], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, -3, 0, null] },
+    ],
+    "maj13": [
+        { label: "E shape", root: 0, offsets: [0, null, 1, 1, 2, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 1, 1, 2, 2], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, null, 1, 2, 2] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -1, -1, -3, null] },
+    ],
+    "6/9": [
+        { label: "E shape", root: 0, offsets: [0, null, -1, -1, 0, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, -1, -1, 0, 0] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, -1, 0, null] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -1, -1, 0, 0] },
+    ],
+    "maj7#11": [
+        { label: "E shape", root: 0, offsets: [0, null, 1, 1, -1, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, 1, 1, 2, null] },
+    ],
+    "min7": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, 0, 0, null] },
+        { label: "E shape 2", root: 0, offsets: [0, 2, 0, 0, 0, 0] },
+        { label: "E shape 3", root: 0, offsets: [0, 2, 0, 0, 3, 0] },
+    ],
+    "min9": [
+        { label: "E shape", root: 0, offsets: [0, 2, 0, 0, 0, 2] },
+        { label: "A shape", root: 1, offsets: [null, 0, -2, 0, 0, null] },
+    ],
+    "madd9": [
+        { label: "E shape", root: 0, offsets: [0, 2, 2, 0, 0, 2] },
+        { label: "A shape", root: 1, offsets: [null, 0, -2, -3, 0, null] },
+    ],
+    "min11": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, 0, -2, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -2, 0, -2, -2] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -2, 0, 0, -2] },
+    ],
+    "min13": [
+        { label: "E shape", root: 0, offsets: [0, 2, 0, 0, 2, 0] },
+        { label: "E shape 2", root: 0, offsets: [0, 2, 0, 0, 2, 2] },
+        { label: "A shape", root: 1, offsets: [null, 0, null, 0, 1, 2] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, 2, 0, 1, 2] },
+    ],
+    "m6": [
+        { label: "E shape", root: 0, offsets: [0, null, -1, 0, 0, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, -1, 1, null] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -2, -1, -2, null] },
+    ],
+    "m6/9": [
+        { label: "A shape", root: 1, offsets: [null, 0, -2, -1, 0, null] },
+    ],
+    "mb6": [
+        { label: "E shape", root: 0, offsets: [0, null, -2, 0, 0, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -2, -2, 1, null] },
+    ],
+    "dom7": [
+        { label: "E shape", root: 0, offsets: [0, 2, 0, 1, 0, 0] },
+        { label: "E shape 2", root: 0, offsets: [0, 2, 0, 1, 3, 0] },
+        { label: "E shape 3", root: 0, offsets: [0, null, 0, 1, 0, null] },
+    ],
+    "7#9": [
+        { label: "E shape", root: 0, offsets: [0, -1, 0, 0, null, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 0, 1, null] },
+    ],
+    "7#11": [
+        { label: "E shape", root: 0, offsets: [0, 1, 0, 1, -1, null], thumb: true },
+        { label: "E shape 2", root: 0, offsets: [0, null, 0, 1, -1, null] },
+        { label: "E shape 3", root: 0, offsets: [0, 1, 0, 1, 0, 0] },
+        { label: "A shape", root: 1, offsets: [null, 0, 1, 0, 2, 0] },
+    ],
+    "7b13": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, 1, 1, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 0, 1, 1, 0], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 0, 2, 1] },
+    ],
+    "7b9b13": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, 1, 1, 1], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 0, -1, 1] },
+    ],
+    "13b9": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, -2, -3, -3] },
+        { label: "E shape 2", root: 0, offsets: [0, null, 0, 1, 2, 1], thumb: true },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 0, -1, 2] },
+    ],
+    "sus4": [
+        { label: "E shape", root: 0, offsets: [0, 2, 2, 2, 0, 0] },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 2, 3, 0] },
+    ],
+    "sus2": [
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 2, 0, 0] },
+    ],
+    "7sus2": [
+        { label: "E shape", root: 0, offsets: [0, null, 0, -1, 0, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, null, 0, 0, 0] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, 2, 0, 0, 0] },
+    ],
+    "maj7sus2": [
+        { label: "E shape", root: 0, offsets: [0, null, 1, -1, 0, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 1, 0, 0] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, -3, -3, -3, null] },
+    ],
+    "13sus2": [
+        { label: "A shape", root: 1, offsets: [null, 0, 2, 0, 0, 2] },
+    ],
+    "dim7": [
+        { label: "E shape", root: 0, offsets: [0, null, -1, 0, -1, null] },
+        { label: "E shape 2", root: 0, offsets: [0, null, -1, 0, -1, 0] },
+        { label: "A shape", root: 1, offsets: [null, 0, 1, -1, 1, null] },
+        { label: "A shape 2", root: 1, offsets: [null, 0, 1, -1, 1, -1] },
+    ],
+    "dim": [
+        { label: "E shape", root: 0, offsets: [0, 1, 2, 0, null, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, 1, 2, 1, null] },
+    ],
+    "aug": [
+        { label: "E shape", root: 0, offsets: [0, 3, 2, 1, null, null] },
+        { label: "E shape 2", root: 0, offsets: [0, -1, -2, -3, -3, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, -2, -2, null] },
+    ],
+};
 // ─── Movable shape library ───────────────────────────────────────────────────
 // Each chord type carries several named movable shapes, in the same E-shape /
 // A-shape families guitarists actually use. `root` is the string index holding
@@ -18262,7 +18421,7 @@ function deriveShapeBarre(frets) {
     return { fret: min, fromString: from, toString: to };
 }
 // Reject anything a hand can't actually form.
-function isPlayableVoicing(frets, barre) {
+function isPlayableVoicing(frets, barre, thumb) {
     const sounding = frets.filter((f) => f !== null);
     if (sounding.length < 2)
         return false;
@@ -18274,7 +18433,8 @@ function isPlayableVoicing(frets, barre) {
         if (Math.max(...vals) - Math.min(...vals) > 4)
             return false;
     }
-    const list = fretted;
+    // The thumb can reach over to fret the LOW E only — never any other string.
+    const list = thumb ? fretted.filter((x) => x.i !== 0) : fretted;
     if (barre) {
         for (let i = barre.fromString; i <= barre.toString; i++) {
             if (frets[i] === null)
@@ -18294,7 +18454,8 @@ function isPlayableVoicing(frets, barre) {
 }
 // Realise every library shape for a chord at a given root, as absolute frets.
 function shapesFor(rootIdx, quality) {
-    const defs = SHAPE_LIBRARY[quality];
+    const curated = !!CURATED_SHAPES[quality];
+    const defs = CURATED_SHAPES[quality] || SHAPE_LIBRARY[quality];
     if (!defs)
         return [];
     const out = [];
@@ -18310,9 +18471,9 @@ function shapesFor(rootIdx, quality) {
             if (frets.some((f) => f !== null && f < 0))
                 continue;
             const barre = deriveShapeBarre(frets);
-            if (!isPlayableVoicing(frets, barre))
+            if (!isPlayableVoicing(frets, barre, def.thumb))
                 continue;
-            out.push({ frets, barre, shapeTag: def.label });
+            out.push({ frets, barre, shapeTag: def.label, thumb: !!def.thumb, curated });
             break;
         }
     }
@@ -18426,10 +18587,12 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         const key = v.frets.join(",");
         if (seen.has(key))
             return;
-        if (!isPlayableVoicing(v.frets, v.barre))
+        if (!isPlayableVoicing(v.frets, v.barre, v.thumb))
             return; // drop anything a hand can't form
-        if (spellsADifferentChord(v.frets, rootIdx, quality))
-            return; // would be mislabelled
+        // Curated shapes carry a label supplied by hand, so they're taken as given;
+        // 7♯11 and 7♭5 share a pitch-class set, for instance, and only context decides.
+        if (!v.curated && spellsADifferentChord(v.frets, rootIdx, quality))
+            return;
         seen.add(key);
         voicings.push(v);
     };
@@ -18475,12 +18638,13 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
         const played = refFrets.filter((f) => f !== null && f > 0);
         const min = played.length > 0 ? Math.min(...played) : 0;
         const base = min === 0 ? "Open" : `Fr ${min}`;
+        const t = v.thumb ? " ✛" : ""; // ✛ = thumb over the low E
         if (v.shapeName)
-            v.label = `${base} (${v.shapeName})`; // capo: named by effective root
+            v.label = `${base} (${v.shapeName})${t}`; // capo: named by effective root
         else if (v.shapeTag)
-            v.label = `${base} · ${v.shapeTag}`; // CAGED shape hint
+            v.label = `${base} · ${v.shapeTag}${t}`; // shape family
         else
-            v.label = base;
+            v.label = base + t;
     });
     return voicings;
 }
