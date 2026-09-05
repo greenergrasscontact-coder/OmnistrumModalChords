@@ -17231,6 +17231,7 @@ const CHORD_INTERVALS = {
     // Add chords (9 stored as 14 to preserve chord-tone order)
     add9: [0, 4, 7, 14],
     madd9: [0, 3, 7, 14],
+    add9no5: [0, 4, 14], // add9 with the 5th dropped — root, 3rd, 9th only
     // Extended 5-note chords
     maj9: [0, 4, 7, 11, 14],
     min9: [0, 3, 7, 10, 14],
@@ -17277,7 +17278,7 @@ const QUALITY_LABEL = {
     aug7: "aug 7", augMaj7: "aug maj 7",
     "7b5": "dom 7 ♭5", "7sus4": "7 sus 4", "7sus2": "7 sus 2",
     "6": "major 6", m6: "minor 6",
-    add9: "add 9", madd9: "min add 9",
+    add9: "add 9", madd9: "min add 9", add9no5: "add 9 (no5)",
     maj9: "maj 9", min9: "min 9", "9": "dom 9", "6/9": "6/9", mMaj9: "min/maj 9",
     "11": "dom 11", min11: "min 11", maj11: "maj 11",
     "maj7#11": "maj 7 ♯11", "7#11": "dom 7 ♯11", add11: "add 11",
@@ -17372,6 +17373,7 @@ function chordName(rootIdx, quality) {
         case "6": return note + "6";
         case "m6": return note + "m6";
         case "add9": return note + "add9";
+        case "add9no5": return note + "add9(no5)";
         case "madd9": return note + "m(add9)";
         case "maj9": return note + "maj9";
         case "min9": return note + "m9";
@@ -18172,6 +18174,10 @@ const CURATED_SHAPES = {
 // fingers (a barre counts as one, and no thumb-over is assumed), the root in
 // the bass, and no string muted underneath a barre.
 const SHAPE_LIBRARY = {
+    "add9no5": [
+        { label: "E shape", root: 0, offsets: [0, -1, 2, -1, null, null] },
+        { label: "A shape", root: 1, offsets: [null, 0, -1, 2, 0, null] },
+    ],
     // Power chords are two-note grips, so they sit outside the four-string rule
     "5": [
         { label: "E shape", root: 0, offsets: [0, 2, 2, null, null, null] },
@@ -19344,7 +19350,7 @@ function getAccent(quality, palette) {
     return palette.maj;
 }
 const INVERSION_NAME = ["Root position", "1st inversion", "2nd inversion", "3rd inversion", "4th inversion"];
-function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord, loadRequest, onUpdateSlot, onCancelEdit, onSaveShape, savedShapes, onDeleteShape }) {
+function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord, onPlayGuitar, loadRequest, onUpdateSlot, onCancelEdit, onSaveShape, savedShapes, onDeleteShape }) {
     const [open, setOpen] = useState(false);
     const [pianoActive, setPianoActive] = useState(new Set()); // absolute MIDI numbers
     const [guitarFrets, setGuitarFrets] = useState([null, null, null, null, null, null]);
@@ -19409,6 +19415,13 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
     const playFound = () => {
         if (!primary)
             return;
+        if (instrument === "guitar" && guitarFrets.some((f) => f !== null)) {
+            // Strum the exact frets entered — same octave, same strings a card or a
+            // progression slot would use for this fingering, so it sounds identical
+            // to how it plays back elsewhere in the app.
+            onPlayGuitar(guitarFrets);
+            return;
+        }
         if (instrument === "piano" && pianoActive.size > 0) {
             // Sound the exact voicing entered, not a generic root-position chord
             const sorted = [...pianoActive].sort((a, b) => a - b);
@@ -19792,7 +19805,7 @@ function ProgressionBar({ progression, playingIndex, labelMode, keyRootIdx, onPl
 const QUALITY_GROUPS = [
     { label: "Triads", qualities: ["maj", "min", "dim", "aug", "sus2", "sus4"] },
     { label: "7ths", qualities: ["maj7", "min7", "dom7", "m7b5", "dim7", "mMaj7"] },
-    { label: "6 & add 9", qualities: ["6", "m6", "add9", "madd9"] },
+    { label: "6 & add 9", qualities: ["6", "m6", "add9", "madd9", "add9no5"] },
     { label: "Sus 7", qualities: ["7sus4", "7sus2", "maj7sus2", "13sus2"] },
     { label: "Extended", qualities: ["maj9", "min9", "9", "6/9", "mMaj9"] },
     { label: "11ths", qualities: ["11", "min11", "maj11", "7#11", "maj7#11", "add11"] },
@@ -19800,9 +19813,22 @@ const QUALITY_GROUPS = [
     { label: "6ths", qualities: ["6", "m6", "6/9", "m6/9", "mb6"] },
     { label: "Altered", qualities: ["7b5", "7b9", "7#9", "aug7"] },
 ];
-function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette, labelMode, keyRootIdx, onHideShape }) {
+// Any chord type that exists in CHORD_INTERVALS but hasn't been sorted into one
+// of the curated groups above still needs a way to be selected — otherwise
+// adding a new chord type here is a two-step edit (easy to do one half of and
+// forget the other, which is exactly how "5", the "no3"/"no5" shells, and
+// augMaj7 went unreachable from the picker for a while). This appends a catch-all
+// group with anything left over, computed fresh from whatever CHORD_INTERVALS
+// currently contains, so a new entry is always reachable the moment it's added.
+const ALL_QUALITY_GROUPS = (() => {
+    const grouped = new Set(QUALITY_GROUPS.flatMap((g) => g.qualities));
+    const leftover = Object.keys(CHORD_INTERVALS).filter((q) => !grouped.has(q));
+    return leftover.length ? [...QUALITY_GROUPS, { label: "More", qualities: leftover }] : QUALITY_GROUPS;
+})();
+function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette, labelMode, keyRootIdx, onHideShape, onPlayNote }) {
     var _a, _b, _c, _d;
     const [menuOpen, setMenuOpen] = useState(false);
+    const [showMap, setShowMap] = useState(false);
     const cardRef = useRef(null);
     // Close the picker when the user taps anywhere outside this card
     useEffect(() => {
@@ -19884,13 +19910,14 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
                     QUALITY_LABEL[effective.quality] || effective.quality,
                     " \u25BE")),
             React.createElement("div", { className: "card-actions" },
+                instrument === "guitar" && (React.createElement("button", { className: `card-map-btn ${showMap ? "active" : ""}`, onClick: (e) => { e.stopPropagation(); setShowMap((v) => !v); }, title: "Show every place this chord's notes fall on the neck" }, "\u25EB")),
                 React.createElement("button", { className: "card-edit-btn", onClick: handleEdit, title: "Open in Chord Finder to modify" }, "\u270E"),
                 React.createElement("button", { className: "add-to-prog", onClick: handleAdd, title: "Add to progression" }, "+"))),
         menuOpen && (React.createElement("div", { className: "quality-picker-menu", onClick: stop },
             isOverridden && (React.createElement("button", { className: "quality-reset", onClick: resetQuality },
                 "\u21BA reset to ",
                 QUALITY_LABEL[chord.quality])),
-            QUALITY_GROUPS.map((group) => (React.createElement("div", { className: "quality-group", key: group.label },
+            ALL_QUALITY_GROUPS.map((group) => (React.createElement("div", { className: "quality-group", key: group.label },
                 React.createElement("span", { className: "quality-group-label" }, group.label),
                 React.createElement("div", { className: "quality-group-buttons" }, group.qualities.map((q) => (React.createElement("button", { key: q, className: `quality-option ${effective.quality === q ? "active" : ""}`, onClick: (e) => setQuality(e, q) }, QUALITY_LABEL[q] || q))))))))),
         React.createElement("div", { className: "chord-name-wrap" },
@@ -19898,6 +19925,10 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
         instrument === "guitar" && showPositionPills && (React.createElement("div", { className: "voicing-positions", onClick: stop }, voicings.map((v, i) => (React.createElement("span", { key: i, className: `pos-pill-wrap ${voicingIdx === i ? "active" : ""}` },
             React.createElement("button", { className: `pos-pill ${voicingIdx === i ? "active" : ""} ${v.mine ? "mine" : ""}`, onClick: (e) => setVoicing(e, i) }, v.label),
             v.shapeTag && onHideShape && (React.createElement(ConfirmButton, { className: "pos-pill-hide", title: `Hide "${v.shapeTag}" from every ${QUALITY_LABEL[effective.quality] || effective.quality} chord`, armedTitle: "Tap again to hide this shape", armedChildren: "hide?", onConfirm: () => onHideShape(effective.quality, v.shapeTag) }, "\u00D7"))))))),
+        showMap && instrument === "guitar" && (React.createElement("div", { className: "card-map", onClick: stop },
+            React.createElement("div", { className: "card-map-scroll" },
+                React.createElement(ChordNoteMap, { rootIdx: effective.rootIdx, quality: effective.quality, currentFrets: guitarSupported && guitarShape ? guitarShape.frets : null, palette: palette, labelMode: labelMode, keyRootIdx: keyRootIdx, onPlayNote: onPlayNote })),
+            React.createElement("span", { className: "card-map-hint" }, "filled = this voicing \u00B7 outlined = same chord tone elsewhere \u00B7 tap to hear"))),
         React.createElement("div", { className: `diagram-wrap ${instrument}` }, instrument === "guitar"
             ? (guitarSupported
                 ? React.createElement(GuitarDiagram, { shape: guitarShape, accent: accent, rootIdx: effective.rootIdx, labelMode: labelMode, keyRootIdx: keyRootIdx, quality: effective.quality })
@@ -19919,6 +19950,54 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
             React.createElement("div", { className: "control-group" },
                 React.createElement("span", { className: "ctrl-key" }, "arp"),
                 React.createElement("div", { className: "ctrl-bar" }, ARP_PATTERNS.map((p) => (React.createElement("button", { key: p, className: `ctrl-btn ${(settings.arp || "off") === p ? "active" : ""}`, onClick: (e) => setArp(e, p), title: ARP_NAME[p] }, ARP_GLYPH[p]))))))));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Chord note map — every place this chord's tones fall across the neck, with
+// the notes of the currently selected voicing filled in solid. Useful for
+// building an alternative fingering: you can see which other frets carry the
+// same chord tone, and tap them to hear the pitch.
+// ─────────────────────────────────────────────────────────────────────────────
+function ChordNoteMap({ rootIdx, quality, currentFrets, palette, labelMode, keyRootIdx, onPlayNote }) {
+    const ivs = CHORD_INTERVALS[quality] || [0];
+    const pcSet = new Set(ivs.map((iv) => ((rootIdx + iv) % 12 + 12) % 12));
+    // Which frets the selected voicing actually uses, so they can be shown solid
+    const inUse = new Set((currentFrets || [])
+        .map((f, i) => (f === null ? null : `${i}:${f}`))
+        .filter(Boolean));
+    const numFrets = 15, numStrings = 6;
+    const PAD_L = 26, PAD_R = 10, PAD_T = 12, PAD_B = 18;
+    const FRET_W = 40, STRING_H = 19;
+    const W = PAD_L + (numFrets + 1) * FRET_W + PAD_R;
+    const H = PAD_T + (numStrings - 1) * STRING_H + PAD_B;
+    const stringY = (vi) => PAD_T + vi * STRING_H;
+    const fretX = (fret) => (fret === 0 ? PAD_L - 13 : PAD_L + (fret - 1) * FRET_W + FRET_W / 2);
+    const accentRoot = palette.maj, accentTone = palette.min;
+    const thirdFifth = new Set([ivs[1], ivs[2]].filter((x) => x !== undefined)
+        .map((iv) => ((rootIdx + iv) % 12 + 12) % 12));
+    return (React.createElement("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, className: "cnm-svg" },
+        [3, 5, 7, 9, 15].map((f) => f <= numFrets && (React.createElement("circle", { key: `d${f}`, cx: fretX(f), cy: (stringY(0) + stringY(numStrings - 1)) / 2, r: 2.5, fill: "rgba(212,169,106,0.10)" }))),
+        [12].map((f) => (React.createElement("g", { key: "d12" },
+            React.createElement("circle", { cx: fretX(f), cy: stringY(1) + STRING_H / 2, r: 2.5, fill: "rgba(212,169,106,0.12)" }),
+            React.createElement("circle", { cx: fretX(f), cy: stringY(3) + STRING_H / 2, r: 2.5, fill: "rgba(212,169,106,0.12)" })))),
+        Array.from({ length: numFrets + 1 }, (_, i) => (React.createElement("line", { key: `f${i}`, x1: PAD_L + i * FRET_W, y1: PAD_T - 4, x2: PAD_L + i * FRET_W, y2: H - PAD_B, stroke: i === 0 ? "var(--ink-2)" : "var(--line-soft)", strokeWidth: i === 0 ? 3 : 1 }))),
+        Array.from({ length: numStrings }, (_, vi) => (React.createElement("line", { key: `s${vi}`, x1: PAD_L - 22, y1: stringY(vi), x2: W - PAD_R, y2: stringY(vi), stroke: "var(--ink-3)", strokeWidth: 1, opacity: 0.35 }))),
+        [3, 5, 7, 9, 12, 15].map((fret) => fret <= numFrets ? (React.createElement("text", { key: `fn${fret}`, x: fretX(fret), y: H - 5, textAnchor: "middle", className: "cnm-fret-num" }, fret)) : null),
+        Array.from({ length: numStrings }, (_, vi) => {
+            const strIdx = numStrings - 1 - vi;
+            return Array.from({ length: numFrets + 1 }, (_, fret) => {
+                const pc = (OPEN_STRING_MIDI[strIdx] + fret) % 12;
+                if (!pcSet.has(pc))
+                    return null;
+                const isRoot = pc === rootIdx;
+                const used = inUse.has(`${strIdx}:${fret}`);
+                const cx = fretX(fret), cy = stringY(vi);
+                const col = isRoot ? accentRoot : thirdFifth.has(pc) ? accentTone : accentRoot;
+                const r = used ? 9 : 7.5;
+                return (React.createElement("g", { key: `n${vi}-${fret}`, onClick: onPlayNote ? () => onPlayNote(OPEN_STRING_MIDI[strIdx] + fret) : undefined, style: onPlayNote ? { cursor: "pointer" } : undefined },
+                    React.createElement("circle", { cx: cx, cy: cy, r: r, fill: used ? col : "rgba(0,0,0,0.35)", stroke: col, strokeWidth: used ? 0 : 1.3, opacity: used ? 1 : 0.75 }),
+                    React.createElement("text", { x: cx, y: cy + 3, textAnchor: "middle", className: "cnm-label", fill: used ? "var(--bg)" : col, opacity: used ? 1 : 0.9 }, noteLabel(pc, labelMode === "notes" ? "chord" : labelMode, rootIdx, keyRootIdx, quality))));
+            });
+        })));
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Scale map — visualize all notes of a scale across the fretboard / keyboard,
@@ -20861,6 +20940,10 @@ function ChordModesApp() {
     };
     const finderPlayNote = (midi) => playSingleNote(midi, instrument, activeTone);
     const finderPlayChord = (intervals, baseMidi) => synthChord(intervals, baseMidi, instrument, undefined, activeTone);
+    // Strum the EXACT frets the user entered, the same way a card or a progression
+    // slot would — matching pitch (and octave) exactly rather than resynthesizing
+    // a generic voicing at a fixed register.
+    const finderPlayGuitar = (frets) => playGuitarStrum(frets, 0, 0.022, activeTone);
     const animKey = `${rootIdx}-${modeName}-${chordType}-${instrument}`;
     return (React.createElement("div", { className: "app-root" },
         React.createElement("style", null, styles),
@@ -20923,7 +21006,7 @@ function ChordModesApp() {
             React.createElement("div", { className: "control-block" },
                 React.createElement("label", { className: "control-label" }, "Mode"),
                 React.createElement("div", { className: "mode-grid" }, MODE_NAMES.map((m) => (React.createElement("button", { key: m, className: `mode-pill ${m === modeName ? "active" : ""}`, onClick: () => setModeName(m) }, m)))))),
-        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord, loadRequest: finderLoad, onUpdateSlot: replaceSlotChord, onCancelEdit: () => setFinderLoad(null), onSaveShape: saveShape, onDeleteShape: deleteShape, savedShapes: userShapes }),
+        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord, onPlayGuitar: finderPlayGuitar, loadRequest: finderLoad, onUpdateSlot: replaceSlotChord, onCancelEdit: () => setFinderLoad(null), onSaveShape: saveShape, onDeleteShape: deleteShape, savedShapes: userShapes }),
         React.createElement(ScaleFinder, { instrument: instrument, palette: palette, onSelectScale: (r, m) => { setRootIdx(r); setModeName(m); }, onPlayNote: finderPlayNote }),
         React.createElement("section", { className: "mode-banner", key: animKey },
             React.createElement("div", { className: "mode-banner-inner" },
@@ -20945,7 +21028,7 @@ function ChordModesApp() {
                 React.createElement("div", { className: "scale-notes" }, mode.intervals.map((iv, i) => (React.createElement("span", { key: i, className: "scale-note" },
                     React.createElement("span", { className: "scale-deg" }, i + 1),
                     React.createElement("span", { className: "scale-name" }, NOTES[(rootIdx + iv) % 12]))))))),
-        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, onEdit: (c, st, cu) => sendToFinder(c, st, cu, null, c.name), palette: palette, labelMode: labelMode, keyRootIdx: rootIdx, onHideShape: toggleHidden })))),
+        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, onEdit: (c, st, cu) => sendToFinder(c, st, cu, null, c.name), palette: palette, labelMode: labelMode, keyRootIdx: rootIdx, onHideShape: toggleHidden, onPlayNote: finderPlayNote })))),
         React.createElement(ScaleMapSection, { rootIdx: rootIdx, modeName: modeName, instrument: instrument, palette: palette, chords: chords, onPlayNote: finderPlayNote }),
         React.createElement("footer", { className: "footer" },
             "tap any chord to play \u00B7 use ",
@@ -21465,6 +21548,36 @@ const styles = `
 }
 @keyframes armPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
 .pos-pill-hide.armed { width: auto; }
+
+/* Chord note map on the card */
+.card-map-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface-3); border: 1px solid var(--line-soft); color: var(--ink-3);
+  cursor: pointer; font-size: 12px; line-height: 1; display: flex; align-items: center;
+  justify-content: center; transition: all 0.18s ease; padding: 0;
+}
+.card-map-btn:hover { background: var(--gold); color: var(--bg); border-color: var(--gold); transform: scale(1.08); }
+.card-map-btn.active { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+.card-map {
+  margin: 10px 0 4px; padding: 8px 8px 6px;
+  background: var(--bg); border: 1px solid var(--line-soft); border-radius: 10px;
+  animation: slotIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.card-map-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cnm-svg { display: block; }
+.cnm-fret-num {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 9px;
+  fill: var(--ink-3); letter-spacing: 0.04em;
+}
+.cnm-label {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  font-size: 8.5px; font-weight: 700;
+}
+.card-map-hint {
+  display: block; margin-top: 5px; text-align: center;
+  font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; font-style: italic;
+  font-size: 10px; color: var(--ink-3);
+}
 
 .pos-pill-wrap { display: inline-flex; align-items: stretch; }
 .pos-pill.mine { border-color: rgba(212,169,106,0.55); color: var(--gold); }
