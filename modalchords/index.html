@@ -17878,6 +17878,7 @@ function identifyScale(pcs, bassPc) {
 }
 const OPEN_STRING_MIDI = [40, 45, 50, 55, 59, 64];
 const OPEN_OVERRIDES = {
+    "4-min9": { frets: [0, 2, 2, 0, 3, 2] }, // open Em9
     "0-maj": { frets: [null, 3, 2, 0, 1, 0] }, "2-maj": { frets: [null, null, 0, 2, 3, 2] },
     "2-min": { frets: [null, null, 0, 2, 3, 1] }, "4-maj": { frets: [0, 2, 2, 1, 0, 0] },
     "4-min": { frets: [0, 2, 2, 0, 0, 0] }, "7-maj": { frets: [3, 2, 0, 0, 0, 3] },
@@ -17929,6 +17930,75 @@ const OPEN_OVERRIDES = {
     "10-aug": { frets: [null, 1, 0, 3, 3, 2] },
     "11-aug": { frets: [null, 2, 1, 0, 0, 3] },
 };
+// ─── User shape library ──────────────────────────────────────────────────────
+// Shapes added from the Chord Finder. Two kinds:
+//   scope "movable" — stored as offsets from the root fret, so it works in all
+//                     twelve keys, exactly like the built-in shapes
+//   scope "pinned"  — stored as literal frets for one specific chord, for
+//                     voicings that rely on open strings and can't be moved
+// Kept in the browser so they survive a reload, and also written into project
+// files so they travel with a save.
+const USER_SHAPES_KEY = "modalchords.userShapes.v1";
+function loadUserShapes() {
+    try {
+        const raw = window.localStorage.getItem(USER_SHAPES_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    }
+    catch (e) {
+        return [];
+    }
+}
+function persistUserShapes(list) {
+    try {
+        window.localStorage.setItem(USER_SHAPES_KEY, JSON.stringify(list));
+    }
+    catch (e) { }
+}
+// Turn a set of frets into a shape definition for the given chord.
+function makeUserShape(frets, rootIdx, quality, scope) {
+    const sounding = frets.map((f, i) => ({ f, i })).filter((x) => x.f !== null);
+    if (sounding.length < 2)
+        return null;
+    const id = `us-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    if (scope === "pinned") {
+        return { id, scope: "pinned", quality, rootIdx, frets: [...frets] };
+    }
+    // Movable: the root must actually be sounding somewhere so offsets have an anchor
+    const rootStr = sounding.find((x) => ((OPEN_STRING_MIDI[x.i] + x.f) % 12 + 12) % 12 === rootIdx);
+    if (!rootStr)
+        return null;
+    return {
+        id, scope: "movable", quality,
+        root: rootStr.i,
+        offsets: frets.map((f) => (f === null ? null : f - rootStr.f)),
+    };
+}
+// Shapes the user has hidden, keyed by chord type + shape label.
+const HIDDEN_KEY = "modalchords.hiddenShapes.v1";
+function loadHidden() {
+    try {
+        const raw = window.localStorage.getItem(HIDDEN_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    }
+    catch (e) {
+        return [];
+    }
+}
+function persistHidden(list) {
+    try {
+        window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(list));
+    }
+    catch (e) { }
+}
+// Module-level so the pure voicing functions can see them without prop drilling.
+let USER_SHAPES = [];
+let HIDDEN_SHAPES = [];
+function setUserShapeRegistry(shapes, hidden) {
+    USER_SHAPES = shapes || [];
+    HIDDEN_SHAPES = hidden || [];
+}
 // ─── Curated shapes ──────────────────────────────────────────────────────────
 // Transcribed from chord charts and verified: correct chord tones, at most a
 // four-fret span, and at most four fingers — with the thumb allowed to fret the
@@ -17992,6 +18062,7 @@ const CURATED_SHAPES = {
         { label: "E shape", root: 0, offsets: [0, null, 0, 0, 0, null] },
         { label: "E shape 2", root: 0, offsets: [0, 2, 0, 0, 0, 0] },
         { label: "E shape 3", root: 0, offsets: [0, 2, 0, 0, 3, 0] },
+        { label: "E shape 4", root: 0, offsets: [0, 2, 2, 0, 3, 0] },
         { label: "A shape", root: 1, offsets: [null, 0, 2, 0, 1, 0] },
     ],
     "min9": [
@@ -18457,7 +18528,10 @@ function isPlayableVoicing(frets, barre, thumb) {
 // Realise every library shape for a chord at a given root, as absolute frets.
 function shapesFor(rootIdx, quality) {
     const curated = !!CURATED_SHAPES[quality];
-    const defs = CURATED_SHAPES[quality] || SHAPE_LIBRARY[quality];
+    const base = CURATED_SHAPES[quality] || SHAPE_LIBRARY[quality];
+    const mine = USER_SHAPES.filter((u) => u.scope === "movable" && u.quality === quality)
+        .map((u, i) => ({ label: `Mine${i ? " " + (i + 1) : ""}`, root: u.root, offsets: u.offsets, mine: true, id: u.id }));
+    const defs = mine.concat(base || []);
     if (!defs)
         return [];
     const out = [];
@@ -18475,7 +18549,8 @@ function shapesFor(rootIdx, quality) {
             const barre = deriveShapeBarre(frets);
             if (!isPlayableVoicing(frets, barre, def.thumb))
                 continue;
-            out.push({ frets, barre, shapeTag: def.label, thumb: !!def.thumb, curated });
+            out.push({ frets, barre, shapeTag: def.label, thumb: !!def.thumb,
+                curated: curated || !!def.mine, mine: !!def.mine, shapeId: def.id });
             break;
         }
     }
@@ -18603,7 +18678,14 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
     if (openOverride) {
         push({ frets: [...openOverride.frets], barre: null });
     }
-    // 2. Every movable shape in the library (E shape, E shape 2, A shape, ...)
+    // 2. Shapes pinned by the user to this exact chord (open-string voicings that
+    //    can't be transposed), then every movable shape in the library.
+    for (const u of USER_SHAPES) {
+        if (u.scope === "pinned" && u.quality === quality && u.rootIdx === rootIdx) {
+            push({ frets: [...u.frets], barre: deriveShapeBarre([...u.frets]),
+                shapeTag: "Mine", curated: true, mine: true, shapeId: u.id });
+        }
+    }
     for (const sh of shapesFor(rootIdx, quality))
         push(sh);
     // 4. D-shape on the top four strings (root on string 4 / D string).
@@ -18630,6 +18712,39 @@ function getChordVoicings(rootIdx, quality, capoFret = 0) {
                 : [null, n, n + 1, n, n + 1, null];
             push({ frets, barre: null });
         }
+    }
+    // ── Trim clutter ──────────────────────────────────────────────────────────
+    // 1. Octave duplicates: the same grip twelve frets higher is the same shape
+    //    an octave up, so it adds nothing.
+    // 2. Subsets: a shape that is another shape with strings removed (same frets
+    //    wherever both sound) is the same fingering on fewer strings — keep the
+    //    fuller one.
+    {
+        const keys = new Set(voicings.map((v) => v.frets.join(",")));
+        voicings = voicings.filter((v) => {
+            const lower = v.frets.map((f) => (f === null ? null : f - 12));
+            return !(lower.every((f) => f === null || f >= 0) && keys.has(lower.join(",")));
+        });
+        const snapshot = voicings.slice();
+        voicings = voicings.filter((v, i) => !snapshot.some((o, j) => {
+            if (i === j)
+                return false;
+            const vN = v.frets.filter((f) => f !== null).length;
+            const oN = o.frets.filter((f) => f !== null).length;
+            if (oN < vN || (oN === vN && j > i))
+                return false;
+            for (let k = 0; k < 6; k++) {
+                if (v.frets[k] === null)
+                    continue;
+                if (o.frets[k] !== v.frets[k])
+                    return false;
+            }
+            return true;
+        }));
+    }
+    // Drop anything the user has hidden for this chord type
+    if (HIDDEN_SHAPES.length) {
+        voicings = voicings.filter((v) => !HIDDEN_SHAPES.includes(`${quality}|${v.shapeTag || ""}`));
     }
     // Compute labels (relative-to-capo if capo is on so the user reads the
     // numbers from their playing perspective)
@@ -19204,7 +19319,7 @@ function getAccent(quality, palette) {
     return palette.maj;
 }
 const INVERSION_NAME = ["Root position", "1st inversion", "2nd inversion", "3rd inversion", "4th inversion"];
-function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord, loadRequest, onUpdateSlot, onCancelEdit }) {
+function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPlayChord, loadRequest, onUpdateSlot, onCancelEdit, onSaveShape, savedShapes, onDeleteShape }) {
     const [open, setOpen] = useState(false);
     const [pianoActive, setPianoActive] = useState(new Set()); // absolute MIDI numbers
     const [guitarFrets, setGuitarFrets] = useState([null, null, null, null, null, null]);
@@ -19403,6 +19518,21 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                     " ",
                     identified.slice(1, 6).map((m) => (m.approx ? m.name
                         : getDisplayName({ rootIdx: m.rootIdx, quality: m.quality, name: m.name }, m.inversion))).join(", ")))),
+            instrument === "guitar" && primary && CHORD_INTERVALS[primary.quality] && (React.createElement("div", { className: "finder-shape-bar" },
+                React.createElement("span", { className: "finder-shape-label" },
+                    "Save this fingering as a shape for ",
+                    displayName,
+                    ":"),
+                React.createElement("div", { className: "finder-shape-btns" },
+                    React.createElement("button", { className: "finder-shape-btn", onClick: () => onSaveShape(guitarFrets, primary, "movable"), title: "Store as an interval pattern so it works in every key" }, "\u2605 All keys"),
+                    React.createElement("button", { className: "finder-shape-btn", onClick: () => onSaveShape(guitarFrets, primary, "pinned"), title: "Store the exact frets for this chord only - use for open-string voicings" }, "\u2605 This chord only")),
+                savedShapes && savedShapes.length > 0 && (React.createElement("div", { className: "finder-saved" }, savedShapes.map((u) => (React.createElement("span", { key: u.id, className: "finder-saved-chip" },
+                    u.scope === "pinned" ? "pinned" : "movable",
+                    " ",
+                    "[",
+                    (u.frets || u.offsets).map((f) => (f === null ? "x" : f)).join(" "),
+                    "]",
+                    React.createElement("button", { onClick: () => onDeleteShape(u.id), title: "Remove this shape" }, "\u00D7")))))))),
             React.createElement("div", { className: "finder-actions" },
                 React.createElement("button", { className: "finder-btn-secondary", onClick: clearNotes, disabled: noteCount === 0 }, "Clear"),
                 React.createElement("button", { className: "finder-btn-secondary", onClick: playFound, disabled: !primary }, "\u25B8 Play"),
@@ -19645,7 +19775,7 @@ const QUALITY_GROUPS = [
     { label: "6ths", qualities: ["6", "m6", "6/9", "m6/9", "mb6"] },
     { label: "Altered", qualities: ["7b5", "7b9", "7#9", "aug7"] },
 ];
-function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette, labelMode, keyRootIdx }) {
+function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAddToProgression, onEdit, palette, labelMode, keyRootIdx, onHideShape }) {
     var _a, _b, _c, _d;
     const [menuOpen, setMenuOpen] = useState(false);
     const cardRef = useRef(null);
@@ -19740,7 +19870,9 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
                 React.createElement("div", { className: "quality-group-buttons" }, group.qualities.map((q) => (React.createElement("button", { key: q, className: `quality-option ${effective.quality === q ? "active" : ""}`, onClick: (e) => setQuality(e, q) }, QUALITY_LABEL[q] || q))))))))),
         React.createElement("div", { className: "chord-name-wrap" },
             React.createElement("h3", { className: "chord-name", style: { fontSize: isLong ? 28 : 38 } }, displayName)),
-        instrument === "guitar" && showPositionPills && (React.createElement("div", { className: "voicing-positions", onClick: stop }, voicings.map((v, i) => (React.createElement("button", { key: i, className: `pos-pill ${voicingIdx === i ? "active" : ""}`, onClick: (e) => setVoicing(e, i) }, v.label))))),
+        instrument === "guitar" && showPositionPills && (React.createElement("div", { className: "voicing-positions", onClick: stop }, voicings.map((v, i) => (React.createElement("span", { key: i, className: `pos-pill-wrap ${voicingIdx === i ? "active" : ""}` },
+            React.createElement("button", { className: `pos-pill ${voicingIdx === i ? "active" : ""} ${v.mine ? "mine" : ""}`, onClick: (e) => setVoicing(e, i) }, v.label),
+            v.shapeTag && onHideShape && (React.createElement("button", { className: "pos-pill-hide", title: `Hide "${v.shapeTag}" from every ${QUALITY_LABEL[effective.quality] || effective.quality} chord`, onClick: (e) => { e.stopPropagation(); onHideShape(effective.quality, v.shapeTag); } }, "\u00D7"))))))),
         React.createElement("div", { className: `diagram-wrap ${instrument}` }, instrument === "guitar"
             ? (guitarSupported
                 ? React.createElement(GuitarDiagram, { shape: guitarShape, accent: accent, rootIdx: effective.rootIdx, labelMode: labelMode, keyRootIdx: keyRootIdx, quality: effective.quality })
@@ -20262,6 +20394,32 @@ function ChordModesApp() {
     const [sections, setSections] = useState(() => [makeSection("Verse")]);
     const [activeSecIdx, setActiveSecIdx] = useState(0);
     const [labelMode, setLabelMode] = useState("notes"); // notes | chord | key
+    const [userShapes, setUserShapes] = useState(() => loadUserShapes());
+    const [hiddenShapes, setHiddenShapes] = useState(() => loadHidden());
+    // The voicing engine reads these from module scope, so keep it in sync.
+    setUserShapeRegistry(userShapes, hiddenShapes);
+    useEffect(() => { setUserShapeRegistry(userShapes, hiddenShapes); }, [userShapes, hiddenShapes]);
+    const saveShape = (frets, primary, scope) => {
+        const def = makeUserShape(frets, primary.rootIdx, primary.quality, scope);
+        if (!def) {
+            alert("Add the root note somewhere in the voicing to save it as a movable shape.");
+            return;
+        }
+        const next = [...userShapes, def];
+        setUserShapes(next);
+        persistUserShapes(next);
+    };
+    const deleteShape = (id) => {
+        const next = userShapes.filter((u) => u.id !== id);
+        setUserShapes(next);
+        persistUserShapes(next);
+    };
+    const toggleHidden = (quality, tag) => {
+        const k = `${quality}|${tag || ""}`;
+        const next = hiddenShapes.includes(k) ? hiddenShapes.filter((x) => x !== k) : [...hiddenShapes, k];
+        setHiddenShapes(next);
+        persistHidden(next);
+    };
     const [guitarTone, setGuitarTone] = useState(DEFAULT_TONE.guitar);
     const [pianoTone, setPianoTone] = useState(DEFAULT_TONE.piano);
     const fileInputRef = useRef(null);
@@ -20282,7 +20440,7 @@ function ChordModesApp() {
     const mode = MODES[modeName];
     const autoCapoFret = useMemo(() => computeBestCapo(rootIdx, modeName, chordType), [rootIdx, modeName, chordType]);
     const capo = capoMode === "off" ? 0 : capoMode === "auto" ? autoCapoFret : parseInt(capoMode, 10) || 0;
-    const chords = useMemo(() => getChordsForMode(rootIdx, modeName, chordType, capo), [rootIdx, modeName, chordType, capo]);
+    const chords = useMemo(() => getChordsForMode(rootIdx, modeName, chordType, capo), [rootIdx, modeName, chordType, capo, userShapes, hiddenShapes]);
     // Reset per-card settings when the underlying chord identities change (mode/root).
     // We intentionally do NOT reset on chordType — per-card quality overrides should
     // persist across the Triads/7ths toggle.
@@ -20452,7 +20610,7 @@ function ChordModesApp() {
         const data = {
             format: "modal-chords", version: 1, savedAt: new Date().toISOString(),
             rootIdx, modeName, chordType, instrument, capoMode, bpm, loop,
-            guitarTone, pianoTone,
+            guitarTone, pianoTone, userShapes, hiddenShapes,
             sections: sections.map((sec) => ({
                 name: sec.name, repeats: sec.repeats,
                 slots: sec.slots.map((sl) => ({
@@ -20508,6 +20666,14 @@ function ChordModesApp() {
                     setGuitarTone(data.guitarTone);
                 if (data.pianoTone && PIANO_TONES[data.pianoTone])
                     setPianoTone(data.pianoTone);
+                if (Array.isArray(data.userShapes)) {
+                    setUserShapes(data.userShapes);
+                    persistUserShapes(data.userShapes);
+                }
+                if (Array.isArray(data.hiddenShapes)) {
+                    setHiddenShapes(data.hiddenShapes);
+                    persistHidden(data.hiddenShapes);
+                }
                 const restored = data.sections.map((sec) => {
                     const s2 = makeSection(sec.name || "Section", []);
                     s2.repeats = Math.max(1, Math.min(16, sec.repeats || 1));
@@ -20723,7 +20889,7 @@ function ChordModesApp() {
             React.createElement("div", { className: "control-block" },
                 React.createElement("label", { className: "control-label" }, "Mode"),
                 React.createElement("div", { className: "mode-grid" }, MODE_NAMES.map((m) => (React.createElement("button", { key: m, className: `mode-pill ${m === modeName ? "active" : ""}`, onClick: () => setModeName(m) }, m)))))),
-        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord, loadRequest: finderLoad, onUpdateSlot: replaceSlotChord, onCancelEdit: () => setFinderLoad(null) }),
+        React.createElement(ChordFinder, { instrument: instrument, palette: palette, onAddToProgression: addToProgression, onPlayNote: finderPlayNote, onPlayChord: finderPlayChord, loadRequest: finderLoad, onUpdateSlot: replaceSlotChord, onCancelEdit: () => setFinderLoad(null), onSaveShape: saveShape, onDeleteShape: deleteShape, savedShapes: userShapes }),
         React.createElement(ScaleFinder, { instrument: instrument, palette: palette, onSelectScale: (r, m) => { setRootIdx(r); setModeName(m); }, onPlayNote: finderPlayNote }),
         React.createElement("section", { className: "mode-banner", key: animKey },
             React.createElement("div", { className: "mode-banner-inner" },
@@ -20745,7 +20911,7 @@ function ChordModesApp() {
                 React.createElement("div", { className: "scale-notes" }, mode.intervals.map((iv, i) => (React.createElement("span", { key: i, className: "scale-note" },
                     React.createElement("span", { className: "scale-deg" }, i + 1),
                     React.createElement("span", { className: "scale-name" }, NOTES[(rootIdx + iv) % 12]))))))),
-        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, onEdit: (c, st, cu) => sendToFinder(c, st, cu, null, c.name), palette: palette, labelMode: labelMode, keyRootIdx: rootIdx })))),
+        React.createElement("section", { className: "chord-grid", key: `grid-${animKey}` }, chords.map((c, i) => (React.createElement(ChordCard, { key: `${c.name}-${i}`, chord: c, index: i, instrument: instrument, settings: getSetting(i), onChange: (next) => updateSetting(i, next), onPlay: playChord, onAddToProgression: addToProgression, onEdit: (c, st, cu) => sendToFinder(c, st, cu, null, c.name), palette: palette, labelMode: labelMode, keyRootIdx: rootIdx, onHideShape: toggleHidden })))),
         React.createElement(ScaleMapSection, { rootIdx: rootIdx, modeName: modeName, instrument: instrument, palette: palette, chords: chords, onPlayNote: finderPlayNote }),
         React.createElement("footer", { className: "footer" },
             "tap any chord to play \u00B7 use ",
@@ -21252,6 +21418,45 @@ const styles = `
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
   margin: 0 0 8px;
 }
+.pos-pill-wrap { display: inline-flex; align-items: stretch; }
+.pos-pill.mine { border-color: rgba(212,169,106,0.55); color: var(--gold); }
+.pos-pill-hide {
+  background: transparent; border: none; color: var(--ink-3); cursor: pointer;
+  font-size: 11px; line-height: 1; padding: 0 4px 0 2px; opacity: 0.35;
+  transition: all 0.15s ease;
+}
+.pos-pill-hide:hover { opacity: 1; color: var(--copper); }
+
+/* Save-a-shape controls in the chord finder */
+.finder-shape-bar {
+  margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.finder-shape-label {
+  display: block; font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  font-style: italic; font-size: 12px; color: var(--ink-3); margin-bottom: 8px;
+}
+.finder-shape-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.finder-shape-btn {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 10px;
+  letter-spacing: 0.05em; background: transparent; color: var(--ink-3);
+  border: 1px solid var(--line-soft); padding: 6px 12px; border-radius: 999px;
+  cursor: pointer; transition: all 0.16s ease;
+}
+.finder-shape-btn:hover { color: var(--gold); border-color: rgba(212,169,106,0.5); background: rgba(212,169,106,0.07); }
+.finder-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.finder-saved-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 10px;
+  color: var(--ink-2); background: var(--surface-3);
+  border: 1px solid var(--line-soft); border-radius: 999px; padding: 4px 8px;
+}
+.finder-saved-chip button {
+  background: transparent; border: none; color: var(--ink-3); cursor: pointer;
+  font-size: 12px; line-height: 1; padding: 0;
+}
+.finder-saved-chip button:hover { color: var(--copper); }
+
 .pos-pill {
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
