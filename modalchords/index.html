@@ -19014,6 +19014,31 @@ function useAudio() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Guitar diagram (chord cards)
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── Confirm-before-destroying ───────────────────────────────────────────────
+// A one-tap delete is easy to hit by accident, especially on a phone. The first
+// tap arms the button and shows what's about to happen; a second tap within a
+// few seconds commits. Anything else — waiting, or tapping elsewhere — cancels.
+function ConfirmButton({ className = "", armedClassName = "armed", title, armedTitle, children, armedChildren, onConfirm, disabled, timeout = 3200 }) {
+    const [armed, setArmed] = useState(false);
+    const timer = useRef(null);
+    useEffect(() => () => { if (timer.current)
+        clearTimeout(timer.current); }, []);
+    const disarm = () => { if (timer.current)
+        clearTimeout(timer.current); setArmed(false); };
+    const click = (e) => {
+        e.stopPropagation();
+        if (disabled)
+            return;
+        if (armed) {
+            disarm();
+            onConfirm();
+            return;
+        }
+        setArmed(true);
+        timer.current = setTimeout(() => setArmed(false), timeout);
+    };
+    return (React.createElement("button", { className: `${className} ${armed ? armedClassName : ""}`, onClick: click, onBlur: disarm, disabled: disabled, title: armed ? (armedTitle || "Tap again to confirm") : title }, armed ? (armedChildren !== null && armedChildren !== void 0 ? armedChildren : "sure?") : children));
+}
 // ─── Note labelling ──────────────────────────────────────────────────────────
 // Diagrams can label each note three ways:
 //   "notes"  — the note name (C, E, G)
@@ -19532,7 +19557,7 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                     "[",
                     (u.frets || u.offsets).map((f) => (f === null ? "x" : f)).join(" "),
                     "]",
-                    React.createElement("button", { onClick: () => onDeleteShape(u.id), title: "Remove this shape" }, "\u00D7")))))))),
+                    React.createElement(ConfirmButton, { armedChildren: "delete?", title: "Remove this shape", onConfirm: () => onDeleteShape(u.id) }, "\u00D7")))))))),
             React.createElement("div", { className: "finder-actions" },
                 React.createElement("button", { className: "finder-btn-secondary", onClick: clearNotes, disabled: noteCount === 0 }, "Clear"),
                 React.createElement("button", { className: "finder-btn-secondary", onClick: playFound, disabled: !primary }, "\u25B8 Play"),
@@ -19651,7 +19676,7 @@ function ProgressionBar({ progression, playingIndex, labelMode, keyRootIdx, onPl
             React.createElement("div", { className: "prog-actions" },
                 React.createElement("button", { className: `prog-toggle ${showPresets ? "active" : ""}`, onClick: () => setShowPresets((v) => !v), title: "Common progressions" }, showPresets ? "▾ Presets" : "▸ Presets"),
                 !isEmpty && (React.createElement("button", { className: `prog-toggle ${showFingerings ? "active" : ""}`, onClick: () => setShowFingerings((v) => !v), title: "Show fingerings" }, showFingerings ? "▾ Fingerings" : "▸ Fingerings")),
-                !isEmpty && React.createElement("button", { className: "prog-clear", onClick: onClear }, "Clear"),
+                !isEmpty && (React.createElement(ConfirmButton, { className: "prog-clear", armedChildren: "Clear all?", title: "Remove every chord from this section", armedTitle: "Tap again to clear this section", onConfirm: onClear }, "Clear")),
                 React.createElement("button", { className: "prog-export", onClick: onSave, title: "Save this project to a file" }, "\u2913 Save"),
                 React.createElement("button", { className: "prog-export", onClick: onLoad, title: "Open a saved project file" }, "\u2912 Open"),
                 !isEmpty && React.createElement("button", { className: "prog-export", onClick: () => onExport("song"), title: "Download all sections as a MIDI file" }, "\u2913 MIDI"))),
@@ -19672,7 +19697,7 @@ function ProgressionBar({ progression, playingIndex, labelMode, keyRootIdx, onPl
                 React.createElement("input", { className: "sec-name-input", value: sections[activeIdx].name, onChange: (e) => onRenameSection(activeIdx, e.target.value), "aria-label": "Section name" }),
                 React.createElement("button", { className: "sec-mini", onClick: () => onMoveSection(activeIdx, -1), disabled: activeIdx === 0, title: "Move section earlier" }, "\u25C2"),
                 React.createElement("button", { className: "sec-mini", onClick: () => onMoveSection(activeIdx, 1), disabled: activeIdx === sections.length - 1, title: "Move section later" }, "\u25B8"),
-                React.createElement("button", { className: "sec-mini danger", onClick: () => onRemoveSection(activeIdx), disabled: sections.length <= 1, title: "Delete this section" }, "\u2715")))),
+                React.createElement(ConfirmButton, { className: "sec-mini danger", armedChildren: "delete?", title: "Delete this section", armedTitle: "Tap again to delete this section", disabled: sections.length <= 1, onConfirm: () => onRemoveSection(activeIdx) }, "\u2715")))),
         showPresets && (React.createElement("div", { className: "prog-presets" },
             React.createElement("span", { className: "prog-presets-label" }, "Build from the current key:"),
             React.createElement("div", { className: "prog-presets-row" }, presets.map((p) => (React.createElement("button", { key: p.name, className: "preset-pill", onClick: () => { onApplyPreset(p); setShowPresets(false); }, title: p.blurb },
@@ -19725,7 +19750,7 @@ function ProgressionBar({ progression, playingIndex, labelMode, keyRootIdx, onPl
                 const tones = chordTones(slot.chord.rootIdx, slot.chord.quality);
                 return (React.createElement("div", { key: slot.id, className: `prog-slot ${isPlaying ? "playing" : ""} ${showFingerings ? "expanded" : ""}`, style: { animationDelay: `${i * 30}ms` } },
                     React.createElement("div", { className: "prog-slot-bar", style: { background: accent } }),
-                    React.createElement("button", { className: "prog-slot-remove", onClick: () => onRemove(slot.id) }, "\u00D7"),
+                    React.createElement(ConfirmButton, { className: "prog-slot-remove", armedChildren: "?", title: "Remove this chord", armedTitle: "Tap again to remove", onConfirm: () => onRemove(slot.id) }, "\u00D7"),
                     React.createElement("button", { className: "prog-slot-content", onClick: () => onPlay(slot, i) },
                         React.createElement("div", { className: "prog-slot-num" },
                             i + 1,
@@ -19872,7 +19897,7 @@ function ChordCard({ chord, index, instrument, settings, onChange, onPlay, onAdd
             React.createElement("h3", { className: "chord-name", style: { fontSize: isLong ? 28 : 38 } }, displayName)),
         instrument === "guitar" && showPositionPills && (React.createElement("div", { className: "voicing-positions", onClick: stop }, voicings.map((v, i) => (React.createElement("span", { key: i, className: `pos-pill-wrap ${voicingIdx === i ? "active" : ""}` },
             React.createElement("button", { className: `pos-pill ${voicingIdx === i ? "active" : ""} ${v.mine ? "mine" : ""}`, onClick: (e) => setVoicing(e, i) }, v.label),
-            v.shapeTag && onHideShape && (React.createElement("button", { className: "pos-pill-hide", title: `Hide "${v.shapeTag}" from every ${QUALITY_LABEL[effective.quality] || effective.quality} chord`, onClick: (e) => { e.stopPropagation(); onHideShape(effective.quality, v.shapeTag); } }, "\u00D7"))))))),
+            v.shapeTag && onHideShape && (React.createElement(ConfirmButton, { className: "pos-pill-hide", title: `Hide "${v.shapeTag}" from every ${QUALITY_LABEL[effective.quality] || effective.quality} chord`, armedTitle: "Tap again to hide this shape", armedChildren: "hide?", onConfirm: () => onHideShape(effective.quality, v.shapeTag) }, "\u00D7"))))))),
         React.createElement("div", { className: `diagram-wrap ${instrument}` }, instrument === "guitar"
             ? (guitarSupported
                 ? React.createElement(GuitarDiagram, { shape: guitarShape, accent: accent, rootIdx: effective.rootIdx, labelMode: labelMode, keyRootIdx: keyRootIdx, quality: effective.quality })
@@ -20856,6 +20881,15 @@ function ChordModesApp() {
                     React.createElement("div", { className: "type-toggle" },
                         React.createElement("button", { className: `type-pill ${instrument === "guitar" ? "active" : ""}`, onClick: () => setInstrument("guitar") }, "Guitar"),
                         React.createElement("button", { className: `type-pill ${instrument === "piano" ? "active" : ""}`, onClick: () => setInstrument("piano") }, "Piano"))),
+                hiddenShapes.length > 0 && (React.createElement("div", { className: "control-block" },
+                    React.createElement("label", { className: "control-label" }, "Hidden"),
+                    React.createElement("div", { className: "type-toggle" },
+                        React.createElement(ConfirmButton, { className: "type-pill", armedChildren: "restore all?", title: "Bring back every shape you've hidden", onConfirm: () => { setHiddenShapes([]); persistHidden([]); } },
+                            "\u21BA ",
+                            hiddenShapes.length,
+                            " shape",
+                            hiddenShapes.length === 1 ? "" : "s")),
+                    React.createElement("span", { className: "control-hint" }, "shapes you've hidden from the chord cards"))),
                 React.createElement("div", { className: "control-block" },
                     React.createElement("label", { className: "control-label" }, "Labels"),
                     React.createElement("div", { className: "tone-grid" }, [["notes", "Notes"], ["chord", "Chord"], ["key", "Key"]].map(([id, lbl]) => (React.createElement("button", { key: id, className: `tone-pill ${labelMode === id ? "active" : ""}`, onClick: () => setLabelMode(id) }, lbl)))),
@@ -21418,6 +21452,20 @@ const styles = `
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
   margin: 0 0 8px;
 }
+/* Armed state for confirm-before-destroying buttons */
+.armed {
+  background: var(--copper) !important;
+  color: var(--bg) !important;
+  border-color: var(--copper) !important;
+  opacity: 1 !important;
+  font-size: 9px !important;
+  letter-spacing: 0.04em;
+  padding-left: 6px !important; padding-right: 6px !important;
+  animation: armPulse 0.9s ease-in-out infinite;
+}
+@keyframes armPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+.pos-pill-hide.armed { width: auto; }
+
 .pos-pill-wrap { display: inline-flex; align-items: stretch; }
 .pos-pill.mine { border-color: rgba(212,169,106,0.55); color: var(--gold); }
 .pos-pill-hide {
