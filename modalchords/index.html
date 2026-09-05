@@ -19283,7 +19283,10 @@ function midiOctaveLabel(midi) {
 // ─────────────────────────────────────────────────────────────────────────────
 const STRING_LABELS = ["E", "B", "G", "D", "A", "E"];
 const FRETBOARD_INLAYS = [3, 5, 7, 9, 12];
-function InteractiveFretboard({ frets, onChange, onPlayNote, accent }) {
+// `guide` optionally overlays every other place the target chord's tones fall,
+// as faint outlined markers, so you can see where to move a voice while you
+// build a voicing. Tapping one adds it to the fingering like any other fret.
+function InteractiveFretboard({ frets, onChange, onPlayNote, accent, guide }) {
     const numStrings = 6, numFrets = 12;
     const padLeft = 28, padTop = 14, padRight = 8;
     const stringHeight = 24, fretWidth = 38;
@@ -19321,12 +19324,29 @@ function InteractiveFretboard({ frets, onChange, onPlayNote, accent }) {
                 return (React.createElement("rect", { key: `c-${vi}-${f}`, x: x, y: stringY(vi) - stringHeight / 2 + 2, width: fretWidth, height: stringHeight - 4, fill: "transparent", className: "fretboard-click", onClick: () => setFret(strIdx, f) }));
             });
         }),
+        guide && Array.from({ length: numStrings }).map((_, vi) => {
+            const strIdx = numStrings - 1 - vi;
+            return Array.from({ length: numFrets + 1 }).map((_, f) => {
+                if (frets[strIdx] === f)
+                    return null; // already in the voicing
+                const pc = (OPEN_STRING_MIDI[strIdx] + f) % 12;
+                if (!guide.pcs.has(pc))
+                    return null;
+                const isRoot = pc === guide.rootIdx;
+                const col = isRoot ? guide.rootColor : guide.toneColor;
+                return (React.createElement("g", { key: `g-${vi}-${f}`, pointerEvents: "none", opacity: 0.6 },
+                    React.createElement("circle", { cx: cellCenterX(f), cy: stringY(vi), r: 9, fill: "rgba(0,0,0,0.4)", stroke: col, strokeWidth: 1.2, strokeDasharray: isRoot ? "" : "2.5 1.8" }),
+                    React.createElement("text", { x: cellCenterX(f), y: stringY(vi) + 3, textAnchor: "middle", className: "fretboard-guide-label", fill: col }, guide.label(pc))));
+            });
+        }),
         frets.map((fret, strIdx) => {
             if (fret === null)
                 return null;
             const vi = numStrings - 1 - strIdx;
             const cx = cellCenterX(fret), cy = stringY(vi);
-            const noteName = NOTES[(OPEN_STRING_MIDI[strIdx] + fret) % 12];
+            const noteName = guide && guide.labelSelected
+                ? guide.label((OPEN_STRING_MIDI[strIdx] + fret) % 12)
+                : NOTES[(OPEN_STRING_MIDI[strIdx] + fret) % 12];
             if (fret === 0) {
                 return (React.createElement("g", { key: `m${strIdx}`, pointerEvents: "none" },
                     React.createElement("circle", { cx: cx, cy: cy, r: 11, fill: "none", stroke: accent, strokeWidth: 2 }),
@@ -19357,6 +19377,11 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
     const [pianoBase, setPianoBase] = useState(60); // window start, C4
     const [editSlotId, setEditSlotId] = useState(null);
     const [editLabel, setEditLabel] = useState(null);
+    // A chord you've locked onto, so its tones stay mapped across the neck while
+    // you rearrange notes — otherwise the reference would vanish the moment the
+    // voicing stops spelling the chord.
+    const [target, setTarget] = useState(null); // { rootIdx, quality, name }
+    const [guideLabels, setGuideLabels] = useState(true);
     // A chord sent here from a card or a progression slot: load its notes, open up,
     // and (when it came from a slot) remember which slot we're editing.
     useEffect(() => {
@@ -19485,6 +19510,21 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
         }
         return names;
     }, [instrument, pianoActive, guitarFrets]);
+    // The chord whose tones get mapped: whatever you've locked, else what's
+    // currently identified.
+    const guideChord = target || (primary && CHORD_INTERVALS[primary.quality]
+        ? { rootIdx: primary.rootIdx, quality: primary.quality, name: primary.name } : null);
+    const guide = (instrument === "guitar" && guideChord) ? {
+        rootIdx: guideChord.rootIdx,
+        pcs: new Set((CHORD_INTERVALS[guideChord.quality] || [0])
+            .map((iv) => ((guideChord.rootIdx + iv) % 12 + 12) % 12)),
+        rootColor: palette.maj,
+        toneColor: palette.min,
+        labelSelected: guideLabels,
+        label: (pc) => (guideLabels
+            ? chordDegreeLabel(pc, guideChord.rootIdx, guideChord.quality)
+            : NOTES[pc]),
+    } : null;
     let statusText = null;
     if (noteCount === 0)
         statusText = "Select keys to identify a chord";
@@ -19529,7 +19569,20 @@ function ChordFinder({ instrument, palette, onAddToProgression, onPlayNote, onPl
                     React.createElement("strong", null, editLabel || "chord"),
                     " in the progression"),
                 React.createElement("button", { className: "finder-edit-cancel", onClick: () => { exitEdit(); clearNotes(); } }, "cancel"))),
-            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeMidi: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent, baseMidi: pianoBase })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent }))),
+            instrument === "guitar" && (guideChord || target) && (React.createElement("div", { className: "finder-guide-bar" },
+                React.createElement("span", { className: "finder-guide-text" }, target
+                    ? React.createElement(React.Fragment, null,
+                        "Mapping ",
+                        React.createElement("strong", { style: { color: palette.maj } }, target.name),
+                        " across the neck \u2014 rearrange freely, the reference stays put")
+                    : React.createElement(React.Fragment, null,
+                        "Showing where else ",
+                        React.createElement("strong", { style: { color: palette.maj } }, guideChord.name),
+                        "'s notes fall")),
+                React.createElement("div", { className: "finder-guide-btns" },
+                    React.createElement("button", { className: `finder-guide-btn ${guideLabels ? "active" : ""}`, onClick: () => setGuideLabels((v) => !v), title: "Label markers by their role in the chord instead of note name" }, guideLabels ? "R 3 5" : "C E G"),
+                    target ? (React.createElement("button", { className: "finder-guide-btn", onClick: () => setTarget(null), title: "Follow whatever chord is currently identified" }, "\u2715 Unlock")) : (React.createElement("button", { className: "finder-guide-btn", onClick: () => setTarget(guideChord), title: "Keep mapping this chord while you try other voicings" }, "\u26B2 Lock"))))),
+            React.createElement("div", { className: "finder-diagram-wrap" }, instrument === "piano" ? (React.createElement(InteractivePiano, { activeMidi: pianoActive, onChange: setPianoActive, onPlayNote: onPlayNote, accent: accent, baseMidi: pianoBase })) : (React.createElement(InteractiveFretboard, { frets: guitarFrets, onChange: setGuitarFrets, onPlayNote: onPlayNote, accent: accent, guide: guide }))),
             instrument === "piano" && (React.createElement("div", { className: "finder-octave-bar" },
                 React.createElement("button", { className: "finder-oct-btn", onClick: () => setPianoBase((b) => Math.max(24, b - 12)), disabled: pianoBase <= 24, title: "Move down an octave" }, "\u25C2 oct"),
                 React.createElement("span", { className: "finder-oct-range" },
@@ -21577,6 +21630,31 @@ const styles = `
   display: block; margin-top: 5px; text-align: center;
   font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; font-style: italic;
   font-size: 10px; color: var(--ink-3);
+}
+
+/* Chord-tone guide in the finder */
+.finder-guide-bar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 8px; margin: 2px 0 8px; padding: 7px 12px;
+  background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 9px;
+}
+.finder-guide-text {
+  font-family: 'Fraunces', 'Iowan Old Style', Georgia, serif; font-style: italic;
+  font-size: 12px; color: var(--ink-3);
+}
+.finder-guide-text strong { font-style: normal; font-weight: 600; }
+.finder-guide-btns { display: flex; gap: 6px; }
+.finder-guide-btn {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 10px;
+  letter-spacing: 0.05em; background: transparent; color: var(--ink-3);
+  border: 1px solid var(--line-soft); padding: 4px 10px; border-radius: 999px;
+  cursor: pointer; transition: all 0.16s ease; white-space: nowrap;
+}
+.finder-guide-btn:hover { color: var(--gold); border-color: rgba(212,169,106,0.5); }
+.finder-guide-btn.active { color: var(--gold); border-color: rgba(212,169,106,0.45); background: rgba(212,169,106,0.08); }
+.fretboard-guide-label {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  font-size: 8.5px; font-weight: 700;
 }
 
 .pos-pill-wrap { display: inline-flex; align-items: stretch; }
